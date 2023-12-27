@@ -311,7 +311,7 @@ async def process_one_time(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     one_time_jobs = data['one_time_jobs']
     negative_responses = {'не', 'нет', '-', 'pass', 'пасс', 'не хочу', 'скип',
-                          'пососи', 'пошел нахуй', 'неа', 'не-а', 0}
+                          'пососи', 'пошел нахуй', 'неа', 'не-а', '0'}
     for jobs in text:
         lower_jobs = jobs.lower().replace('ё', 'е')
         if lower_jobs in negative_responses:
