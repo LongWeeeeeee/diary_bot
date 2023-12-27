@@ -257,7 +257,7 @@ async def daily_jobs(message: Message, state: FSMContext) -> None:
 async def diary_download(message: Message) -> None:
     try:
         await message.answer_document(
-            document=FSInputFile(f'{message.from_user.username}_Diary.xlsx'),
+            document=FSInputFile(f'{message.from_user.id}_Diary.xlsx'),
             disable_content_type_detection=True,
         )
     except FileNotFoundError:
