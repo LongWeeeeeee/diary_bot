@@ -109,7 +109,7 @@ def generate_keyboard(buttons: list):
 
 
 async def diary_out(message):
-    data = pd.read_excel(f'{message.from_user.username}_Diary.xlsx')
+    data = pd.read_excel(f'{message.from_user.id}_Diary.xlsx')
     await message.answer(
         "{} | {} | {} | {} | {} | {} | {} | {}".format("Дата", "Дела за день", "Шаги", "Total sleep", 'Deep sleep',
                                                        'О дне', 'My rate', 'Total'))
