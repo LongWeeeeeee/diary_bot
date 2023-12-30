@@ -21,11 +21,13 @@ bot = Bot(token=keys.Token)
 dp = Dispatcher()
 already_started = False
 start = True
+locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
+remove_markup = types.ReplyKeyboardRemove()
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
+negative_responses = {'не', 'нет', '-', 'pass', 'пасс', 'не хочу', 'скип', 'неа', 'не-а', 0}
 translate = {'понедельник': 'mon', 'вторник': 'tue', 'среда': 'wed', 'четверг': 'thu', 'пятница': 'fri',
              'суббота': 'sat',
              'воскресенье': 'sun'}
-remove_markup = types.ReplyKeyboardRemove()
 
 
 class ClientState(StatesGroup):
@@ -51,7 +53,7 @@ class ClientState(StatesGroup):
 
 
 @dp.message(Command(commands=["start"]))
-@dp.message(lambda message: message.text == "Заполнить дневник")
+@dp.message(F.text == "Заполнить дневник")
 async def start(message: Message, state: FSMContext) -> None:
     answer = await create_profile(user_id=message.from_user.id)
     if answer is not None:
@@ -62,9 +64,12 @@ async def start(message: Message, state: FSMContext) -> None:
         if answer[2] != '[]':
             one_time_jobs = json.loads(answer[2])
             data['one_time_jobs'] = one_time_jobs
-        if answer[3] != '':
-            date_jobs = json.loads(answer[3])
-            data['date_jobs'] = date_jobs
+        if answer[3] != '{}':
+            scheduler = json.loads(answer[3])
+            data['scheduler'] = scheduler
+        if answer[4] != '':
+            scheduler_jobs = json.loads(answer[4])
+            data['scheduler_jobs'] = scheduler_jobs
         await state.update_data(**data)
         await existing_user(message, state)
     else:
@@ -89,8 +94,8 @@ async def settings(message: Message, state: FSMContext) -> None:
 async def download(message: Message, state: FSMContext) -> None:
     keyboard = generate_keyboard(['Что такое стоимость?'])
     await message.answer(
-        'Ниже представлен ваш ежедневный список дел и его стоимость в формате "дело: оценка" '
-        'Скопируйте список и отправьте его с обновленными оценками', reply_markup=keyboard)
+        '''Ниже представлен ваш ежедневный список дел и его стоимость в формате "дело: оценка\n
+        Скопируйте список и отправьте его с обновленными оценками''', reply_markup=keyboard)
     user_data = await state.get_data()
     daily_scores = user_data['daily_scores']
     formatted_string = ', '.join([f'{key} : {value}' for key, value in daily_scores.items()])
@@ -122,7 +127,7 @@ async def date_jobs(message: Message, state: FSMContext) -> None:
     locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
     data = await state.get_data()
     try:
-        output = data['scheduler']
+        output = data['scheduler_data'].keys()
         await message.answer('Введите интересующее вас дело\nВаш предыдущий список дел:', reply_markup=remove_markup)
         await message.answer("\n".join(output))
     except:
@@ -165,63 +170,70 @@ async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
         await state.set_state(ClientState.date_jobs_once)
 
 
-async def scheduler_list(message, state, out_message, user_states_data):
+async def scheduler_list(message, state, out_message, user_states_data, **kwargs):
     await message.answer(out_message)
     try:
-        scheduler_data = user_states_data['scheduler']
-        scheduler_data.append(out_message)
+        scheduler_data = user_states_data['scheduler_data']
+        scheduler_data[out_message] = {**kwargs}
     except KeyError:
-        scheduler_data = [out_message]
-    await state.update_data(scheduler=scheduler_data)
+        scheduler_data = dict()
+        scheduler_data[out_message] = {**kwargs}
+    await edit_database(scheduler_data=scheduler_data)
+    await state.update_data(scheduler_data=scheduler_data)
 
 
 @dp.message(ClientState.date_jobs_week)
-async def date_jobs_name(message: Message, state: FSMContext) -> None:
+async def date_jobs_week(message: Message, state: FSMContext) -> None:
     user_message = message.text.lower().replace('ё', 'е')
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
     day_of_week = translate[user_message]
-    scheduler.add_job(add_date_job_func, trigger="cron", hour=7, minute=50, day_of_week=day_of_week,
+    scheduler.add_job(add_date_job_func, trigger="cron", hour=22, minute=18, day_of_week=day_of_week,
                       args=(state, new_date_jobs))
     out_message = f'"{new_date_jobs}" будет напоминаться {"каждую " + user_message[:-1] + "у" if user_message[-1] == "а" else "каждый " + user_message}'
-    await scheduler_list(message, state, out_message, user_states_data)
+    await scheduler_list(message, state, out_message, user_states_data, trigger="cron", hour=22, minute=18,
+                         day_of_week=day_of_week,
+                         args=new_date_jobs)
     await state.set_state(ClientState.settings)
     await settings(message, state)
 
 
 @dp.message(ClientState.date_jobs_month)
-async def date_jobs_name(message: Message, state: FSMContext) -> None:
+async def date_jobs_month(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
     day_of_month = message.text
-    scheduler.add_job(add_date_job_func, trigger="cron", day=f"{day_of_month}", args=(state, new_date_jobs))
+    scheduler.add_job(add_date_job_func, trigger="cron", day=f"{day_of_month}", hour=22, minute=18, args=(state, new_date_jobs))
     out_message = f'"{new_date_jobs}" будет напоминаться каждый {day_of_month} день месяца'
-    await scheduler_list(message, state, out_message, user_states_data)
+    await scheduler_list(message, state, out_message, user_states_data, day=day_of_month, hour=22, minute=18,
+                         trigger="cron", args=new_date_jobs)
     await state.set_state(ClientState.settings)
     await settings(message, state)
 
 
 @dp.message(ClientState.date_jobs_year)
-async def date_jobs_name(message: Message, state: FSMContext) -> None:
+async def date_jobs_year(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
     date = datetime.datetime.strptime(message.text, '%d-%m')
-    scheduler.add_job(add_date_job_func, trigger="cron", day=date.day, month=date.month, args=(state, new_date_jobs))
-    out_message = f'"{new_date_jobs}" будет напоминаться каждый {date.day} {date.strftime("%B")}'
-    await scheduler_list(message, state, out_message, user_states_data)
+    scheduler.add_job(add_date_job_func, trigger="cron", day=date.day, month=date.month, hour=22, minute=18, args=(state, new_date_jobs))
+    out_message = f'"{new_date_jobs}" будет напоминаться каждое {date.day} {date.strftime("%B")}'
+    await scheduler_list(message, state, out_message, user_states_data, trigger="cron", day=date.day, month=date.month, hour=22, minute=18,
+                         args=new_date_jobs)
     await state.set_state(ClientState.settings)
     await settings(message, state)
 
 
 @dp.message(ClientState.date_jobs_once)
-async def date_jobs_name(message: Message, state: FSMContext) -> None:
+async def date_jobs_once(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
-    date = datetime.datetime.strptime(message.text, '%Y-%m-%d')
+    date = datetime.datetime.strptime(message.text, '%Y-%m-%d') + timedelta(hours=22, minutes=17)
     if datetime.datetime.now() < date:
         scheduler.add_job(add_date_job_func, trigger="date", run_date=date, args=(state, new_date_jobs))
         out_message = f'Я напомню вам "{new_date_jobs}" {date.day} {date.strftime("%B")} {date.year}'
-        await scheduler_list(message, state, out_message, user_states_data)
+        await scheduler_list(message, state, out_message, user_states_data, trigger="date", run_date=message.text,
+                             args=new_date_jobs)
         await state.set_state(ClientState.settings)
         await settings(message, state)
     else:
@@ -229,14 +241,75 @@ async def date_jobs_name(message: Message, state: FSMContext) -> None:
 
 
 async def add_date_job_func(state, new_date_jobs):
+    # функция которая срабатывает когда срабатывает scheduler
     user_states_data = await state.get_data()
     try:
-        date_jobs = user_states_data['date_jobs']
-        date_jobs.appen(new_date_jobs)
+        scheduled_jobs = user_states_data['scheduled_jobs']
+        scheduled_jobs.append(new_date_jobs)
     except KeyError:
-        date_jobs = new_date_jobs
-    await edit_database(date_jobs=date_jobs)
-    await state.update_data(date_jobs=date_jobs)
+        scheduled_jobs = [new_date_jobs]
+    await edit_database(scheduled_jobs=scheduled_jobs)
+    await state.update_data(scheduled_jobs=scheduled_jobs)
+
+
+#     user_states_data = await state.get_data()
+#     date = user_states_data['date']
+#     new_date_jobs = user_states_data['new_date_jobs']
+#
+#     async def add_date_jobs(new_date_jobs, date):
+#         if 'date_jobs' in user_states_data:
+#             date_jobs = user_states_data['date_jobs']
+#             date_jobs[new_date_jobs] = date
+#         else:
+#             date_jobs = {new_date_jobs: date}
+#         date_jobs = dict(sorted(date_jobs.items(), key=lambda x: x[1]))
+#         await edit_database(date_jobs=date_jobs)
+#         await state.update_data(date_jobs=date_jobs)
+#
+#     if user_message in ['не', 'нет', '-', 'pass', 'пасс', 'не хочу', 'скип',
+#                         'пососи', 'пошел нахуй', 'неа', 'не-а', 0]:
+#         await add_date_jobs(new_date_jobs, date)
+#         await message.answer('Дело добавлено!')
+#     elif user_message == 'каждую неделю':
+#         await message.answer('Данное событие будет появлятся в списке разовых дел каждую неделю')
+#
+#         async def each_week(new_date_jobs, date):
+#             await add_date_jobs(new_date_jobs, date)
+#             date = datetime.date.today()
+#             await state.set_state(ClientState.settings)
+#             await settings(message, state)
+#             # await asyncio.sleep(604800)
+#             await asyncio.sleep(5)
+#             await each_week(new_date_jobs, date)
+#             print('новая итерация')
+#
+#         await each_week(new_date_jobs, date)
+#     elif user_message == 'каждый месяц':
+#         await message.answer('Данное событие будет появлятся в списке разовых дел каждый месяц')
+#
+#         async def each_month(new_date_jobs, date):
+#             await add_date_jobs(new_date_jobs, date)
+#             date = datetime.date.today()
+#             await state.set_state(ClientState.settings)
+#             await settings(message, state)
+#             await asyncio.sleep(2592000)
+#             # await asyncio.sleep(2592000)
+#             await each_week(new_date_jobs, date)
+#
+#         await each_month(new_date_jobs, date)
+#     elif user_message == 'каждый год':
+#         await message.answer('Данное событие будет появлятся в списке разовых дел каждый год')
+#
+#         async def each_year(new_date_jobs, date):
+#             await add_date_jobs(new_date_jobs, date)
+#             date = datetime.date.today()
+#             await state.set_state(ClientState.settings)
+#             await settings(message, state)
+#             await asyncio.sleep(31536000)
+#             # await asyncio.sleep(31536000)
+#             await each_week(new_date_jobs, date)
+#
+#         await each_year(new_date_jobs, date)
 
 
 @dp.message(F.text == 'Разовые дела', ClientState.jobs)
@@ -254,7 +327,7 @@ async def one_time_jobs(message: Message, state: FSMContext) -> None:
 
 
 @dp.message(ClientState.one_time_jobs_2)
-async def one_time_jobs_1(message: Message, state: FSMContext) -> None:
+async def one_time_jobs_2(message: Message, state: FSMContext) -> None:
     one_time_jobs_str = message.text.lower().replace('ё', 'е').split(', ')
     await edit_database(one_time_jobs=one_time_jobs_str)
     await message.answer('Отлично, теперь ваш список разовых дел выглядит так:')
@@ -284,7 +357,7 @@ async def daily_jobs(message: Message, state: FSMContext) -> None:
 async def diary_download(message: Message) -> None:
     try:
         await message.answer_document(
-            document=FSInputFile(f'{message.from_user.id}_Diary.xlsx'),
+            document=FSInputFile(f'{message.from_user.username}_Diary.xlsx'),
             disable_content_type_detection=True,
         )
     except FileNotFoundError:
@@ -337,8 +410,6 @@ async def process_one_time(message: Message, state: FSMContext) -> None:
     text = message.text.split(', ')
     data = await state.get_data()
     one_time_jobs = data['one_time_jobs']
-    negative_responses = {'не', 'нет', '-', 'pass', 'пасс', 'не хочу', 'скип',
-                          'пососи', 'пошел нахуй', 'неа', 'не-а', '0'}
     for jobs in text:
         lower_jobs = jobs.lower().replace('ё', 'е')
         if lower_jobs in negative_responses:
@@ -425,27 +496,17 @@ async def existing_user(message, state):
         await message.answer(', '.join(one_time_jobs))
     except KeyError:
         pass
-    # if 'date_jobs' in user_data:
-    #     date_jobs = user_data['date_jobs']
-    #     date_jobs_copy = copy.copy(date_jobs)
-
-    # async def getting_today_tasks(task, date, date_jobs_copy):
-    #     time_before = (datetime.now() - datetime.strptime(date, '%Y-%m-%d') - timedelta(
-    #         hours=8)).total_seconds()
-    #     if time_before < 0:
-    #         await asyncio.sleep(time_before * -1)
-    #     else:
-    #         del date_jobs_copy[task]
-    #         return task, date_jobs_copy
-
-    # for task, date in date_jobs.items():
-    #     task, date_jobs_copy = await getting_today_tasks(task, date, date_jobs_copy)
-    #     await message.answer(f'ТОЛЬКО СЕГОДНЯ:\n{task}')
-    #     await edit_database(date_jobs=date_jobs_copy)
-    #     await state.update_data(date_jobs=date_jobs_copy)
-    #     one_time_jobs.append(task)
-    #     await edit_database(one_time_jobs=one_time_jobs)
-    #     await state.update_data(one_time_jobs=one_time_jobs)
+    if 'scheduler' in user_data:
+        for values in user_data['scheduler'].values():
+            values['args'] = (state, values['args'])
+            if 'date' in values:
+                values['date'] = datetime.datetime.strptime(values['date'], '%Y-%m-%d')
+            scheduler.add_job(add_date_job_func, **values)
+    if 'scheduler_jobs' in user_data:
+        output = "\n".join(user_data['scheduler_jobs'])
+        await message.answer(
+            'Запланированные дела:')
+        await message.answer(output)
     await state.set_state(ClientState.greet)
 
 
@@ -467,10 +528,9 @@ async def start_scheduler(message, state):
     global already_started
     if already_started:
         return
-    already_started = True
-    scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     scheduler.add_job(start, 'cron', hour=8, minute=00, args=(message, state))
     scheduler.start()
+    already_started = True
 
 
 async def main():
