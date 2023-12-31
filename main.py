@@ -3,7 +3,6 @@ import datetime
 import json
 import locale
 from datetime import timedelta
-
 from aiogram import Bot, Dispatcher
 from aiogram import types, F
 from aiogram.filters.command import Command
@@ -14,7 +13,7 @@ from aiogram.types import Message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import keys
-from functions import generate_keyboard, diary_out, add_day_to_excel
+from functions import generate_keyboard, diary_out, add_day_to_excel, normalized
 from sqlite import database_start, create_profile, edit_database
 
 bot = Bot(token=keys.Token)
@@ -94,8 +93,8 @@ async def settings(message: Message, state: FSMContext) -> None:
 async def download(message: Message, state: FSMContext) -> None:
     keyboard = generate_keyboard(['Что такое стоимость?'])
     await message.answer(
-        '''Ниже представлен ваш ежедневный список дел и его стоимость в формате "дело: оценка\n
-        Скопируйте список и отправьте его с обновленными оценками''', reply_markup=keyboard)
+        '''Ниже представлен ваш ежедневный список дел и его стоимость в формате "дело: оценка
+Скопируйте список и отправьте его с обновленными оценками''', reply_markup=keyboard)
     user_data = await state.get_data()
     daily_scores = user_data['daily_scores']
     formatted_string = ', '.join([f'{key} : {value}' for key, value in daily_scores.items()])
@@ -106,13 +105,14 @@ async def download(message: Message, state: FSMContext) -> None:
 @dp.message(F.text == 'Что такое стоимость?')
 async def explain_cost(message: Message) -> None:
     await message.answer(
-        '''Стоимость нужна для подсчета очков за ваш день. Изначально стоимость любого дела равна 1,
-    но вы можете переназначить собственное значение. Нужны они для того составить обьективную картину.\n
-    Представим ситуацию, у вас был тяжелый день, и вы чувтсвуете себя совершенно разбитым
-    под конец дня и ставите этому дню оценку 0, однако за этот же день вы делали что-то из
-    списка своих дел, например правильно питались, учили новые языки или еще что-то, и день
-    уже не кажется таким плохим, потому что вы сделали свою рутину. Очки это обьективная оценка
-    дня, тогда как ваша персональная оценка это субьективная оценка и может быть не до конца точной''')
+        'Стоимость нужна для подсчета очков за ваш день:\n\
+Изначально стоимость любого дела равна 1,\
+но вы можете переназначить собственное значение. Нужны они для того составить обьективную картину.\n\n\
+Представим ситуацию, у вас был тяжелый день, и вы чувтсвуете себя совершенно разбитым \
+под конец дня и ставите этому дню оценку 0, однако за этот же день вы делали что-то из \
+списка своих дел, например правильно питались, учили новые языки или еще что-то, и день \
+уже не кажется таким плохим, потому что вы сделали свою рутину. Очки это обьективная оценка \
+дня, тогда как ваша персональная оценка это субьективная оценка и может быть не до конца точной')
 
 
 @dp.message(F.text == 'Изменить Дела', ClientState.settings)
@@ -146,7 +146,7 @@ async def date_jobs_job(message: Message, state: FSMContext) -> None:
 
 @dp.message(ClientState.date_jobs_2)
 async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
-    user_message = message.text.lower().replace('ё', 'е')
+    user_message = normalized(message.text)
     if user_message == 'в день недели':
         keyboard = generate_keyboard(
             ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'])
@@ -184,7 +184,7 @@ async def scheduler_list(message, state, out_message, user_states_data, **kwargs
 
 @dp.message(ClientState.date_jobs_week)
 async def date_jobs_week(message: Message, state: FSMContext) -> None:
-    user_message = message.text.lower().replace('ё', 'е')
+    user_message = normalized(message.text)
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
     day_of_week = translate[user_message]
@@ -320,7 +320,7 @@ async def one_time_jobs(message: Message, state: FSMContext) -> None:
         await message.answer(
             'Введите новый список разовых дел через запятую. Ваш предыдущий список:',
             reply_markup=remove_markup)
-        await message.answer(', '.join(one_time_jobs))
+        await message.answer(one_time_jobs)
     except KeyError:
         await message.answer('Введите новый список разовых дел через запятую', reply_markup=remove_markup)
     await state.set_state(ClientState.one_time_jobs_2)
@@ -328,10 +328,10 @@ async def one_time_jobs(message: Message, state: FSMContext) -> None:
 
 @dp.message(ClientState.one_time_jobs_2)
 async def one_time_jobs_2(message: Message, state: FSMContext) -> None:
-    one_time_jobs_str = message.text.lower().replace('ё', 'е').split(', ')
+    one_time_jobs_str = normalized(message.text)
     await edit_database(one_time_jobs=one_time_jobs_str)
-    await message.answer('Отлично, теперь ваш список разовых дел выглядит так:')
-    await message.answer(', '.join(one_time_jobs_str))
+    await message.answer(f'Отлично, теперь ваш список разовых дел выглядит так:')
+    await message.answer(one_time_jobs_str)
     await state.update_data(one_time_jobs=one_time_jobs_str)
     await settings(message, state)
 
@@ -357,7 +357,7 @@ async def daily_jobs(message: Message, state: FSMContext) -> None:
 async def diary_download(message: Message) -> None:
     try:
         await message.answer_document(
-            document=FSInputFile(f'{message.from_user.username}_Diary.xlsx'),
+            document=FSInputFile(f'{message.from_user.id}_Diary.xlsx'),
             disable_content_type_detection=True,
         )
     except FileNotFoundError:
@@ -367,10 +367,10 @@ async def diary_download(message: Message) -> None:
 @dp.message(ClientState.new_daily_scores)
 async def update_daily_jobs(message: Message, state: FSMContext) -> None:
     daily_scores = dict()
-    user_message = message.text
+    user_message = normalized(message.text)
     str_data = user_message.split(', ')
     for one_jobs in str_data:
-        one_jobs = one_jobs.lower().replace('ё', 'е').split(' : ')
+        one_jobs = one_jobs.split(' : ')
         try:
             daily_scores[one_jobs[0]] = one_jobs[1]
         except IndexError:
@@ -386,19 +386,18 @@ async def update_daily_jobs(message: Message, state: FSMContext) -> None:
 async def my_steps(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     daily_scores = user_states_data['daily_scores']
+    user_message = normalized(message.text)
     # обработка ежедневных дел
-    errors = [activity for activity in message.text.split(', ') if
-              activity.lower().replace('ё', 'е') not in daily_scores]
+    errors = [activity for activity in user_message.split(', ') if
+              activity not in daily_scores]
     if errors:
         for error in errors:
             await message.answer(f"{error} нету в списке!")
     else:
-        activities = [activity.lower().replace('ё', 'е') for activity in message.text.split(', ')]
-        await state.update_data(activities=activities)
+        await state.update_data(activities=user_message.split(', '))
         try:
             one_time_jobs = user_states_data['one_time_jobs']
-            await message.answer('Введите разовые дела, которые выполнили. Список разовых дел:')
-            await message.answer(', '.join(one_time_jobs))
+            await message.answer(f'Введите разовые дела, которые выполнили. Список разовых дел:\n{one_time_jobs}')
             await state.set_state(ClientState.one_time_jobs_proceed)
         except KeyError:
             await message.answer("Сколько сделал шагов?")
@@ -407,20 +406,19 @@ async def my_steps(message: Message, state: FSMContext) -> None:
 
 @dp.message(ClientState.one_time_jobs_proceed)
 async def process_one_time(message: Message, state: FSMContext) -> None:
-    text = message.text.split(', ')
+    text = normalized(message.text).split(', ')
     data = await state.get_data()
     one_time_jobs = data['one_time_jobs']
     for jobs in text:
-        lower_jobs = jobs.lower().replace('ё', 'е')
-        if lower_jobs in negative_responses:
+        if jobs in negative_responses:
             await message.answer("Сколько сделал шагов?")
             await state.set_state(ClientState.steps)
             return
-        elif lower_jobs not in one_time_jobs:
+        elif jobs not in one_time_jobs:
             await message.answer(f'{jobs} нету в списке разовых дел!')
             return
         else:
-            one_time_jobs.remove(lower_jobs)
+            one_time_jobs.remove(jobs)
     await edit_database(one_time_jobs=one_time_jobs)
     if not one_time_jobs:
         await message.answer('Поздравляю! Вы выполнили все разовые дела, так держать')
@@ -493,7 +491,7 @@ async def existing_user(message, state):
         one_time_jobs = user_data['one_time_jobs']
         await message.answer(
             'Разовые дела:')
-        await message.answer(', '.join(one_time_jobs))
+        await message.answer(one_time_jobs)
     except KeyError:
         pass
     if 'scheduler' in user_data:

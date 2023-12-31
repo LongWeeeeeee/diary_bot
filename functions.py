@@ -1,5 +1,5 @@
 from datetime import timedelta
-
+import re
 import pandas as pd
 from aiogram import types
 
@@ -106,6 +106,8 @@ def generate_keyboard(buttons: list):
         resize_keyboard=True,
     )
     return keyboard
+def normalized(text):
+    return re.sub(r',(?=[^\s])', ', ', text).lower().replace('ё', 'е')
 
 
 async def diary_out(message):
