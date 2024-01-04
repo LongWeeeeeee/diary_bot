@@ -66,10 +66,10 @@ async def counter_max_days(data, daily_scores, message, activities):
                      activities}
     negative_output = '\n'.join(['{} : {}'.format(key, value) for key, value in negative_dict.items() if value not in [0, 1]])
     positive_output = '\n'.join(['{} : {}'.format(key, value) for key, value in positive_dict.items() if value not in [0, 1]])
-    if positive_output:
-        await message.answer('Поздравляю! Вы соблюдаете эти дела уже столько дней: ' + '\n' + positive_output)
     if negative_output:
         await message.answer(f'Вы не делали эти дела уже столько дней:\n{negative_output}\nМожет стоит дать им еще один шанс?')
+    if positive_output:
+        await message.answer('Поздравляю! Вы соблюдаете эти дела уже столько дней: ' + '\n' + positive_output)
 
 
 def generate_keyboard(buttons: list):
