@@ -4,23 +4,23 @@ import pandas as pd
 from aiogram import types
 
 
-async def add_day_to_excel(date, activities: [], total_sleep: float, deep_sleep: float, rate: int, mysteps: int,
+async def add_day_to_excel(date, activities: list, total_sleep: float, deep_sleep: float, rate: int, mysteps: int,
                            user_id: int,
-                           daily_scores: [],
+                           daily_scores: list,
                            user_message: str, message):
     path = str(user_id) + '_Diary.xlsx'
-
     try:
         data = pd.read_excel(path)
     except FileNotFoundError:
         data = pd.DataFrame(
             columns=['Дата', 'Дела за день', 'Шаги', 'Total sleep', 'Deep sleep', 'О дне', 'My rate', 'Total'])
 
-    last_row = data.index.max() + 1
+    #Вывод подсчета сколько дней делали и не делал дела из daily_scores в бота
 
+
+    last_row = data.index.max() + 1
     yesterday = date - timedelta(days=1)
     data.loc[last_row, 'Дата'] = yesterday.strftime("%d.%m.%Y")
-
     data.loc[last_row, 'Дела за день'] = ", ".join(activities)
     data.loc[last_row, 'Шаги'] = mysteps
     data.loc[last_row, 'Total sleep'] = total_sleep
@@ -34,60 +34,44 @@ async def add_day_to_excel(date, activities: [], total_sleep: float, deep_sleep:
 
     data.to_excel(path, index=False)
 
-    total_days = {current_word: str(counter_days) + ' дня' if counter_days in [2, 3, 4] else str(counter_days) + ' дней'
-                  for current_word in daily_scores if
-                  (counter_days := counter_negavite(current_word, path)) is not None and counter_days >= 3}
-    output = ['{}: {}'.format(key, value) for key, value in total_days.items()]
-    result = '\n'.join(output)
-    keyboard = generate_keyboard(['Вывести дневник', 'Настройки', 'Заполнить дневник'])
-    if result != '':
-        await message.answer(f'Вы не делали эти дела уже столько дней:\n{result}\nМожет стоит дать им еще один шанс?')
-
-    total_days = {current_word: str(counter_days) + ' дня' if counter_days in [2, 3, 4] else str(counter_days) + ' дней'
-                  for current_word in activities if
-                  (counter_days := counter_positive(current_word, path)) is not None}
-    output = ['{} : {}'.format(key, value) for key, value in total_days.items()]
-    result = '\n'.join(output)
-    if result != '':
-        await message.answer('Поздравляю! Вы соблюдаете эти дела уже столько дней: ' + '\n' + result,
-                             reply_markup=keyboard)
-    await message.answer('Дневник заполнен!', reply_markup=keyboard)
+    await counter_max_days(data=data, daily_scores=daily_scores, message=message, activities=activities)
 
 
-def counter_negavite(current_word, path):
-    data = pd.read_excel(path)
+def counter_negative(column, current_word, count=0):
+    for words in column.iloc[::-1]:
+        split_words = words.split(', ')
+        for word in split_words:
+            if word == current_word:
+                return count
+        count += 1
+    return count
 
-    # Выбор нужной колонки
-    column = data['Дела за день']
-
-    def perebor(count=0):
-        for words in column.iloc[-1::-1]:
-            split_words = words.split(', ')
-            for word in split_words:
-                if word == current_word:
-                    return count
+def counter_positive(current_word, column, count = 0):
+    for words in column.iloc[::-1]:
+        split_words = words.split(', ')
+        if current_word in split_words:
             count += 1
-        return count
+        else:
+            return count
+    return count
 
-    return perebor()
 
-
-def counter_positive(current_word, path):
-    data = pd.read_excel(path)
-    # Выбор нужной колонки
+async def counter_max_days(data, daily_scores, message, activities):
+    negative_dict, positive_dict = {}, {}
+    if negative_dict is None:
+        negative_dict = {}
     column = data['Дела за день']
-
-    def prohod(count=0):
-        for words in column.iloc[-1::-1]:
-            split_words = words.split(', ')
-            if current_word in split_words:
-                count += 1
-            else:
-                if count >= 2: return count
-
-        if count >= 2: return count
-
-    return prohod()
+    for current_word in daily_scores:
+        negative_dict[current_word] = counter_negative(current_word=current_word, column=column)
+    #исключаем из перебора активности которые сделали сегодня
+    for current_word in activities:
+        positive_dict[current_word] = counter_positive(current_word=current_word, column=column)
+    negative_output = '\n'.join(['{} : {}'.format(key, value) for key, value in negative_dict.items() if value not in [0, 1]])
+    positive_output = '\n'.join(['{} : {}'.format(key, value) for key, value in positive_dict.items() if value not in [0, 1]])
+    if positive_output:
+        await message.answer('Поздравляю! Вы соблюдаете эти дела уже столько дней: ' + '\n' + positive_output)
+    if negative_output:
+        await message.answer(f'Вы не делали эти дела уже столько дней:\n{negative_output}\nМожет стоит дать им еще один шанс?')
 
 
 def generate_keyboard(buttons: list):
@@ -111,18 +95,26 @@ def normalized(text):
 
 
 async def diary_out(message):
+    # Чтение данных из файла Excel
     data = pd.read_excel(f'{message.from_user.id}_Diary.xlsx')
+
+    # Отправка заголовка таблицы
     await message.answer(
-        "{} | {} | {} | {} | {} | {} | {} | {}".format("Дата", "Дела за день", "Шаги", "Total sleep", 'Deep sleep',
-                                                       'О дне', 'My rate', 'Total'))
-    for index, row in data.iterrows():
+        "{} | {} | {} | {} | {} | {} | {} | {}".format("Дата", "Дела за день", "Шаги", "Total sleep", "Deep sleep",
+                                                       "О дне", "My rate", "Total"))
+
+    # Получение последних 7 строк данных
+    last_entries = data.tail(7)
+
+    # Перебор и отправка последних 7 строк
+    for index, row in last_entries.iterrows():
         message_sheet = "{} | {} | {} | {} | {} | {} | {} | {}".format(row["Дата"], row["Дела за день"], row["Шаги"],
                                                                        row["Total sleep"], row['Deep sleep'],
-                                                                       row['О дне'],
-                                                                       row['My rate'], row['Total'])
+                                                                       row['О дне'], row['My rate'], row['Total'])
 
-        # разделение длинного сообщения на части
+        # Разделение длинного сообщения на части
         message_parts = [message_sheet[i:i + 4096] for i in range(0, len(message_sheet), 4096)]
 
         for part in message_parts:
             await message.answer(part)
+
