@@ -4,7 +4,7 @@ import pandas as pd
 from aiogram import types
 
 
-async def add_day_to_excel(date, activities: list, total_sleep: float, deep_sleep: float, rate: int, mysteps: int,
+async def add_day_to_excel(date, activities: list, total_sleep: float, deep_sleep: float, personal_rate: float, mysteps: int,
                            user_id: int,
                            daily_scores: list,
                            user_message: str, message):
@@ -26,7 +26,7 @@ async def add_day_to_excel(date, activities: list, total_sleep: float, deep_slee
     data.loc[last_row, 'Total sleep'] = total_sleep
     data.loc[last_row, 'Deep sleep'] = deep_sleep
     data.loc[last_row, 'О дне'] = user_message
-    data.loc[last_row, 'My rate'] = rate
+    data.loc[last_row, 'My rate'] = personal_rate
 
     score = sum(int(daily_scores[activity]) for activity in activities)
 
@@ -62,7 +62,7 @@ async def counter_max_days(data, daily_scores, message, activities):
         negative_dict = {}
     column = data['Дела за день']
     negative_dict = {current_word : counter_negative(current_word=current_word, column=column) for current_word in daily_scores}
-    positive_dict = {current_word: counter_negative(current_word=current_word, column=column) for current_word in
+    positive_dict = {current_word: counter_positive(current_word=current_word, column=column) for current_word in
                      activities}
     negative_output = '\n'.join(['{} : {}'.format(key, value) for key, value in negative_dict.items() if value not in [0, 1]])
     positive_output = '\n'.join(['{} : {}'.format(key, value) for key, value in positive_dict.items() if value not in [0, 1]])

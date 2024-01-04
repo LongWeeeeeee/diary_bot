@@ -13,7 +13,7 @@ from aiogram.types import Message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import keys
-from functions import generate_keyboard, diary_out, add_day_to_excel, normalized
+from test_functions import generate_keyboard, diary_out, add_day_to_excel, normalized
 from sqlite import database_start, create_profile, edit_database
 
 bot = Bot(token=keys.Token)
@@ -452,7 +452,6 @@ async def process_total_sleep(message: Message, state: FSMContext) -> None:
         await message.answer(
             'Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
         await state.set_state(ClientState.about_day)
-        await state.set_state(ClientState.deep_sleep)
 
 
 @dp.message(ClientState.deep_sleep)
@@ -471,15 +470,11 @@ async def process_deep_sleep(message: Message, state: FSMContext) -> None:
 async def process_about_day(message: Message, state: FSMContext) -> None:
     user_message = message.text
     if user_message not in negative_responses:
-        try:
-            user_message = int(user_message)
-            await state.update_data(user_message=message.text)
-            await message.answer('Насколько из 10 сам оцениваешь день?')
-            await state.set_state(ClientState.personal_rate)
-        except:
-            await message.answer(f'"{user_message}" некорректные данные')
+        await state.update_data(user_message=message.text)
+        await message.answer('Насколько из 10 сам оцениваешь день?')
+        await state.set_state(ClientState.personal_rate)
     else:
-        await state.update_data(user_message=0.0)
+        await state.update_data(user_message='-')
         await message.answer('Насколько из 10 сам оцениваешь день?')
         await state.set_state(ClientState.personal_rate)
 
@@ -487,19 +482,28 @@ async def process_about_day(message: Message, state: FSMContext) -> None:
 
 @dp.message(ClientState.personal_rate)
 async def process_personal_rate(message: Message, state: FSMContext) -> None:
-    user_states_data = await state.get_data()
-    daily_scores = user_states_data['daily_scores']
-    date = datetime.datetime.now()
-    activities = user_states_data['activities']
-    user_message = user_states_data['user_message']
-    total_sleep = float(user_states_data['total_sleep'])
-    deep_sleep = float(user_states_data['deep_sleep'])
-    rate = int(message.text)
-    mysteps = int(user_states_data['mysteps'])
-    user_id = message.from_user.id
-    await add_day_to_excel(date, activities, total_sleep, deep_sleep, rate, mysteps, user_id, daily_scores,
-                           user_message, message)
-    await state.set_state(ClientState.greet)
+    try:
+        personal_rate = float(message.text)
+        if personal_rate <= 10 and personal_rate >= 0:
+            user_states_data = await state.get_data()
+            daily_scores = user_states_data['daily_scores']
+            date = datetime.datetime.now()
+            activities = user_states_data['activities']
+            user_message = user_states_data['user_message']
+            total_sleep = float(user_states_data['total_sleep'])
+            deep_sleep = float(user_states_data['deep_sleep'])
+            mysteps = int(user_states_data['mysteps'])
+            user_id = message.from_user.id
+            await add_day_to_excel(date, activities, total_sleep, deep_sleep, personal_rate, mysteps, user_id,
+                                   daily_scores,
+                                   user_message, message)
+            await state.set_state(ClientState.greet)
+        else:
+            await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
+
+    except:
+        await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
+
 
 
 async def existing_user(message, state):
