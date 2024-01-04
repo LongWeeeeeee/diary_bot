@@ -13,7 +13,7 @@ from aiogram.types import Message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import keys
-from test_functions import generate_keyboard, diary_out, add_day_to_excel, normalized
+from functions import generate_keyboard, diary_out, add_day_to_excel, normalized
 from sqlite import database_start, create_profile, edit_database
 
 bot = Bot(token=keys.Token)
