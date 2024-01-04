@@ -397,7 +397,8 @@ async def my_steps(message: Message, state: FSMContext) -> None:
         await state.update_data(activities=user_message.split(', '))
         try:
             one_time_jobs = user_states_data['one_time_jobs']
-            await message.answer(f'Введите разовые дела, которые выполнили. Список разовых дел:\n{one_time_jobs}')
+            await message.answer(f'Введите разовые дела, которые выполнили. Список разовых дел:')
+            await message.answer(one_time_jobs)
             await state.set_state(ClientState.one_time_jobs_proceed)
         except KeyError:
             await message.answer("Сколько сделал шагов?")
@@ -432,17 +433,26 @@ async def process_one_time(message: Message, state: FSMContext) -> None:
 
 
 @dp.message(ClientState.steps)
-async def process_name(message: Message, state: FSMContext) -> None:
+async def process_steps(message: Message, state: FSMContext) -> None:
     await state.update_data(mysteps=message.text)
     await message.answer('Сколько всего спал?')
     await state.set_state(ClientState.total_sleep)
 
 
 @dp.message(ClientState.total_sleep)
-async def process_total_slee(message: Message, state: FSMContext) -> None:
-    await state.update_data(total_sleep=message.text)
-    await message.answer('Сколько из них глубокий сон?')
-    await state.set_state(ClientState.deep_sleep)
+async def process_total_sleep(message: Message, state: FSMContext) -> None:
+    user_message = message.text
+    if user_message not in negative_responses:
+        await state.update_data(total_sleep=user_message)
+        await message.answer('Сколько из них глубокий сон?')
+        await state.set_state(ClientState.deep_sleep)
+    else:
+        await state.update_data(total_sleep=0.0)
+        await state.update_data(deep_sleep=0.0)
+        await message.answer(
+            'Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
+        await state.set_state(ClientState.about_day)
+        await state.set_state(ClientState.deep_sleep)
 
 
 @dp.message(ClientState.deep_sleep)
