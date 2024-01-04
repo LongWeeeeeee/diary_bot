@@ -1,10 +1,12 @@
-from datetime import timedelta
 import re
+from datetime import timedelta
+
 import pandas as pd
 from aiogram import types
 
 
-async def add_day_to_excel(date, activities: list, total_sleep: float, deep_sleep: float, personal_rate: float, mysteps: int,
+async def add_day_to_excel(date, activities: list, total_sleep: float, deep_sleep: float, personal_rate: float,
+                           my_steps: int,
                            user_id: int,
                            daily_scores: list,
                            user_message: str, message):
@@ -13,24 +15,19 @@ async def add_day_to_excel(date, activities: list, total_sleep: float, deep_slee
         data = pd.read_excel(path)
     except FileNotFoundError:
         data = pd.DataFrame(
-            columns=['Дата', 'Дела за день', 'Шаги', 'Total sleep', 'Deep sleep', 'О дне', 'My rate', 'Total'])
+            columns=['Дата', 'Дела за день', 'Шаги', 'Total sleep', 'Deep sleep', 'О дне', 'My rate'])
 
-    #Вывод подсчета сколько дней делали и не делал дела из daily_scores в бота
-
+    # Вывод подсчета сколько дней делали и не делал дела из daily_scores в бота
 
     last_row = data.index.max() + 1
     yesterday = date - timedelta(days=1)
     data.loc[last_row, 'Дата'] = yesterday.strftime("%d.%m.%Y")
     data.loc[last_row, 'Дела за день'] = ", ".join(activities)
-    data.loc[last_row, 'Шаги'] = mysteps
+    data.loc[last_row, 'Шаги'] = my_steps
     data.loc[last_row, 'Total sleep'] = total_sleep
     data.loc[last_row, 'Deep sleep'] = deep_sleep
     data.loc[last_row, 'О дне'] = user_message
     data.loc[last_row, 'My rate'] = personal_rate
-
-    score = sum(int(daily_scores[activity]) for activity in activities)
-
-    data.loc[last_row, 'Total'] = score
 
     data.to_excel(path, index=False)
 
@@ -46,7 +43,8 @@ def counter_negative(column, current_word, count=0):
         count += 1
     return count
 
-def counter_positive(current_word, column, count = 0):
+
+def counter_positive(current_word, column, count=0):
     for words in column.iloc[::-1]:
         split_words = words.split(', ')
         if current_word in split_words:
@@ -61,15 +59,19 @@ async def counter_max_days(data, daily_scores, message, activities):
     if negative_dict is None:
         negative_dict = {}
     column = data['Дела за день']
-    negative_dict = {current_word : counter_negative(current_word=current_word, column=column) for current_word in daily_scores}
+    negative_dict = {current_word: counter_negative(current_word=current_word, column=column) for current_word in
+                     daily_scores}
     positive_dict = {current_word: counter_positive(current_word=current_word, column=column) for current_word in
                      activities}
-    negative_output = '\n'.join(['{} : {}'.format(key, value) for key, value in negative_dict.items() if value not in [0, 1]])
-    positive_output = '\n'.join(['{} : {}'.format(key, value) for key, value in positive_dict.items() if value not in [0, 1]])
-    if negative_output:
-        await message.answer(f'Вы не делали эти дела уже столько дней:\n{negative_output}\nМожет стоит дать им еще один шанс?')
+    negative_output = '\n'.join(
+        ['{} : {}'.format(key, value) for key, value in negative_dict.items() if value not in [0, 1]])
+    positive_output = '\n'.join(
+        ['{} : {}'.format(key, value) for key, value in positive_dict.items() if value not in [0, 1]])
     if positive_output:
         await message.answer('Поздравляю! Вы соблюдаете эти дела уже столько дней: ' + '\n' + positive_output)
+    if negative_output:
+        await message.answer(
+            f'Вы не делали эти дела уже столько дней:\n{negative_output}\nМожет стоит дать им еще один шанс?')
 
 
 def generate_keyboard(buttons: list):
@@ -88,6 +90,8 @@ def generate_keyboard(buttons: list):
         resize_keyboard=True,
     )
     return keyboard
+
+
 def normalized(text):
     return re.sub(r',(?=[^\s])', ', ', text).lower().replace('ё', 'е')
 
@@ -115,4 +119,3 @@ async def diary_out(message):
 
         for part in message_parts:
             await message.answer(part)
-

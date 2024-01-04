@@ -3,6 +3,7 @@ import datetime
 import json
 import locale
 from datetime import timedelta
+
 from aiogram import Bot, Dispatcher
 from aiogram import types, F
 from aiogram.filters.command import Command
@@ -13,8 +14,8 @@ from aiogram.types import Message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import keys
-from functions import generate_keyboard, diary_out, add_day_to_excel, normalized
 from sqlite import database_start, create_profile, edit_database
+from test_functions import generate_keyboard, diary_out, add_day_to_excel, normalized
 
 bot = Bot(token=keys.Token)
 dp = Dispatcher()
@@ -84,35 +85,9 @@ async def diary_output(message: Message, state: FSMContext) -> None:
 
 @dp.message(F.text == 'Настройки')
 async def settings(message: Message, state: FSMContext) -> None:
-    keyboard = generate_keyboard(["Изменить Дела", "Изменить Стоимость", "Скачать дневник", "Заполнить дневник"])
+    keyboard = generate_keyboard(["Изменить Дела", "Скачать дневник", "Заполнить дневник"])
     await message.answer(text='Здесь вы можете изменить свои настройки', reply_markup=keyboard)
     await state.set_state(ClientState.settings)
-
-
-@dp.message(F.text == 'Изменить Стоимость', ClientState.settings)
-async def download(message: Message, state: FSMContext) -> None:
-    keyboard = generate_keyboard(['Что такое стоимость?'])
-    await message.answer(
-        '''Ниже представлен ваш ежедневный список дел и его стоимость в формате "дело: оценка
-Скопируйте список и отправьте его с обновленными оценками''', reply_markup=keyboard)
-    user_data = await state.get_data()
-    daily_scores = user_data['daily_scores']
-    formatted_string = ', '.join([f'{key} : {value}' for key, value in daily_scores.items()])
-    await message.answer(formatted_string)
-    await state.set_state(ClientState.new_daily_scores)
-
-
-@dp.message(F.text == 'Что такое стоимость?')
-async def explain_cost(message: Message) -> None:
-    await message.answer(
-        'Стоимость нужна для подсчета очков за ваш день:\n\
-Изначально стоимость любого дела равна 1,\
-но вы можете переназначить собственное значение. Нужны они для того составить обьективную картину.\n\n\
-Представим ситуацию, у вас был тяжелый день, и вы чувтсвуете себя совершенно разбитым \
-под конец дня и ставите этому дню оценку 0, однако за этот же день вы делали что-то из \
-списка своих дел, например правильно питались, учили новые языки или еще что-то, и день \
-уже не кажется таким плохим, потому что вы сделали свою рутину. Очки это обьективная оценка \
-дня, тогда как ваша персональная оценка это субьективная оценка и может быть не до конца точной')
 
 
 @dp.message(F.text == 'Изменить Дела', ClientState.settings)
@@ -176,8 +151,7 @@ async def scheduler_list(message, state, out_message, user_states_data, **kwargs
         scheduler_data = user_states_data['scheduler_data']
         scheduler_data[out_message] = {**kwargs}
     except KeyError:
-        scheduler_data = dict()
-        scheduler_data[out_message] = {**kwargs}
+        scheduler_data = {out_message: {**kwargs}}
     await edit_database(scheduler_data=scheduler_data)
     await state.update_data(scheduler_data=scheduler_data)
 
@@ -203,7 +177,8 @@ async def date_jobs_month(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
     day_of_month = message.text
-    scheduler.add_job(add_date_job_func, trigger="cron", day=f"{day_of_month}", hour=22, minute=18, args=(state, new_date_jobs))
+    scheduler.add_job(add_date_job_func, trigger="cron", day=f"{day_of_month}", hour=22, minute=18,
+                      args=(state, new_date_jobs))
     out_message = f'"{new_date_jobs}" будет напоминаться каждый {day_of_month} день месяца'
     await scheduler_list(message, state, out_message, user_states_data, day=day_of_month, hour=22, minute=18,
                          trigger="cron", args=new_date_jobs)
@@ -216,9 +191,11 @@ async def date_jobs_year(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
     date = datetime.datetime.strptime(message.text, '%d-%m')
-    scheduler.add_job(add_date_job_func, trigger="cron", day=date.day, month=date.month, hour=22, minute=18, args=(state, new_date_jobs))
+    scheduler.add_job(add_date_job_func, trigger="cron", day=date.day, month=date.month, hour=22, minute=18,
+                      args=(state, new_date_jobs))
     out_message = f'"{new_date_jobs}" будет напоминаться каждое {date.day} {date.strftime("%B")}'
-    await scheduler_list(message, state, out_message, user_states_data, trigger="cron", day=date.day, month=date.month, hour=22, minute=18,
+    await scheduler_list(message, state, out_message, user_states_data, trigger="cron", day=date.day, month=date.month,
+                         hour=22, minute=18,
                          args=new_date_jobs)
     await state.set_state(ClientState.settings)
     await settings(message, state)
@@ -252,66 +229,6 @@ async def add_date_job_func(state, new_date_jobs):
     await state.update_data(scheduled_jobs=scheduled_jobs)
 
 
-#     user_states_data = await state.get_data()
-#     date = user_states_data['date']
-#     new_date_jobs = user_states_data['new_date_jobs']
-#
-#     async def add_date_jobs(new_date_jobs, date):
-#         if 'date_jobs' in user_states_data:
-#             date_jobs = user_states_data['date_jobs']
-#             date_jobs[new_date_jobs] = date
-#         else:
-#             date_jobs = {new_date_jobs: date}
-#         date_jobs = dict(sorted(date_jobs.items(), key=lambda x: x[1]))
-#         await edit_database(date_jobs=date_jobs)
-#         await state.update_data(date_jobs=date_jobs)
-#
-#     if user_message in ['не', 'нет', '-', 'pass', 'пасс', 'не хочу', 'скип',
-#                         'пососи', 'пошел нахуй', 'неа', 'не-а', 0]:
-#         await add_date_jobs(new_date_jobs, date)
-#         await message.answer('Дело добавлено!')
-#     elif user_message == 'каждую неделю':
-#         await message.answer('Данное событие будет появлятся в списке разовых дел каждую неделю')
-#
-#         async def each_week(new_date_jobs, date):
-#             await add_date_jobs(new_date_jobs, date)
-#             date = datetime.date.today()
-#             await state.set_state(ClientState.settings)
-#             await settings(message, state)
-#             # await asyncio.sleep(604800)
-#             await asyncio.sleep(5)
-#             await each_week(new_date_jobs, date)
-#             print('новая итерация')
-#
-#         await each_week(new_date_jobs, date)
-#     elif user_message == 'каждый месяц':
-#         await message.answer('Данное событие будет появлятся в списке разовых дел каждый месяц')
-#
-#         async def each_month(new_date_jobs, date):
-#             await add_date_jobs(new_date_jobs, date)
-#             date = datetime.date.today()
-#             await state.set_state(ClientState.settings)
-#             await settings(message, state)
-#             await asyncio.sleep(2592000)
-#             # await asyncio.sleep(2592000)
-#             await each_week(new_date_jobs, date)
-#
-#         await each_month(new_date_jobs, date)
-#     elif user_message == 'каждый год':
-#         await message.answer('Данное событие будет появлятся в списке разовых дел каждый год')
-#
-#         async def each_year(new_date_jobs, date):
-#             await add_date_jobs(new_date_jobs, date)
-#             date = datetime.date.today()
-#             await state.set_state(ClientState.settings)
-#             await settings(message, state)
-#             await asyncio.sleep(31536000)
-#             # await asyncio.sleep(31536000)
-#             await each_week(new_date_jobs, date)
-#
-#         await each_year(new_date_jobs, date)
-
-
 @dp.message(F.text == 'Разовые дела', ClientState.jobs)
 async def one_time_jobs(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
@@ -342,10 +259,7 @@ async def daily_jobs(message: Message, state: FSMContext) -> None:
                          reply_markup=remove_markup)
     user_states_data = await state.get_data()
     daily_scores = user_states_data['daily_scores']
-    formatted_string = ""
-    for key, value in daily_scores.items():
-        formatted_string += f"{key}, "
-    await message.answer(formatted_string[:-2])
+    await message.answer(', '.join(daily_scores))
     await message.answer(
         'Вы можете воспользоваться предложенным списком или написать свой. Данные могут быть какие '
         'угодно, очки нужны для отчетности о том насколько продуктивен был день.\nСоблюдайте формат '
@@ -366,15 +280,9 @@ async def diary_download(message: Message) -> None:
 
 @dp.message(ClientState.new_daily_scores)
 async def update_daily_jobs(message: Message, state: FSMContext) -> None:
-    daily_scores = dict()
     user_message = normalized(message.text)
     str_data = user_message.split(', ')
-    for one_jobs in str_data:
-        one_jobs = one_jobs.split(' : ')
-        try:
-            daily_scores[one_jobs[0]] = one_jobs[1]
-        except IndexError:
-            daily_scores[one_jobs[0]] = 1
+    daily_scores = [one_jobs for one_jobs in str_data]
     await state.update_data(daily_scores=daily_scores)
     await edit_database(daily_scores=daily_scores)
     await message.answer('Отлично, ваш список ежедневных дел обновлен!')
@@ -459,11 +367,11 @@ async def process_deep_sleep(message: Message, state: FSMContext) -> None:
     try:
         user_message = float(message.text)
         await state.update_data(deep_sleep=message.text)
-        await message.answer('Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
+        await message.answer(
+            'Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
         await state.set_state(ClientState.about_day)
     except:
         await message.answer(f'"{message.text}" должен быть в десятичном формате, например: 1.1 или 0.3')
-
 
 
 @dp.message(ClientState.about_day)
@@ -471,20 +379,19 @@ async def process_about_day(message: Message, state: FSMContext) -> None:
     user_message = message.text
     if user_message not in negative_responses:
         await state.update_data(user_message=message.text)
-        await message.answer('Насколько из 10 сам оцениваешь день?')
+        await message.answer('Насколько из 10 оцениваете день?')
         await state.set_state(ClientState.personal_rate)
     else:
         await state.update_data(user_message='-')
-        await message.answer('Насколько из 10 сам оцениваешь день?')
+        await message.answer('Насколько из 10 оцениваете день?')
         await state.set_state(ClientState.personal_rate)
-
 
 
 @dp.message(ClientState.personal_rate)
 async def process_personal_rate(message: Message, state: FSMContext) -> None:
     try:
         personal_rate = float(message.text)
-        if personal_rate <= 10 and personal_rate >= 0:
+        if personal_rate <= 10.0 and personal_rate >= 0.0:
             user_states_data = await state.get_data()
             daily_scores = user_states_data['daily_scores']
             date = datetime.datetime.now()
@@ -492,18 +399,18 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
             user_message = user_states_data['user_message']
             total_sleep = float(user_states_data['total_sleep'])
             deep_sleep = float(user_states_data['deep_sleep'])
-            mysteps = int(user_states_data['mysteps'])
+            my_steps = int(user_states_data['mysteps'])
             user_id = message.from_user.id
-            await add_day_to_excel(date, activities, total_sleep, deep_sleep, personal_rate, mysteps, user_id,
+            await add_day_to_excel(date, activities, total_sleep, deep_sleep, personal_rate, my_steps, user_id,
                                    daily_scores,
                                    user_message, message)
             await state.set_state(ClientState.greet)
         else:
             await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
 
-    except:
+    except Exception as e:
+        print(e)
         await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
-
 
 
 async def existing_user(message, state):
@@ -513,7 +420,7 @@ async def existing_user(message, state):
         await message.answer(
             'Расскажи мне как провел вчерашний день?' + '\n' + 'Вот список ежедневных дел:')
         keyboard = generate_keyboard(['Вывести дневник', 'Настройки', 'Заполнить дневник'])
-        await message.answer(', '.join(daily_scores.keys()), reply_markup=keyboard)
+        await message.answer(', '.join(daily_scores), reply_markup=keyboard)
         await message.answer(
             'Впишите ежедневные дела которые вы вчера делали' + '\n'
             + 'Вы можете изменить списки в любой момент')
