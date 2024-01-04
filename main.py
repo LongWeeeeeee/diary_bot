@@ -457,16 +457,32 @@ async def process_total_sleep(message: Message, state: FSMContext) -> None:
 
 @dp.message(ClientState.deep_sleep)
 async def process_deep_sleep(message: Message, state: FSMContext) -> None:
-    await state.update_data(deep_sleep=message.text)
-    await message.answer('Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
-    await state.set_state(ClientState.about_day)
+    try:
+        user_message = float(message.text)
+        await state.update_data(deep_sleep=message.text)
+        await message.answer('Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
+        await state.set_state(ClientState.about_day)
+    except:
+        await message.answer(f'"{message.text}" должен быть в десятичном формате, например: 1.1 или 0.3')
+
 
 
 @dp.message(ClientState.about_day)
 async def process_about_day(message: Message, state: FSMContext) -> None:
-    await state.update_data(user_message=message.text)
-    await message.answer('Насколько из 10 сам оцениваешь день?')
-    await state.set_state(ClientState.personal_rate)
+    user_message = message.text
+    if user_message not in negative_responses:
+        try:
+            user_message = int(user_message)
+            await state.update_data(user_message=message.text)
+            await message.answer('Насколько из 10 сам оцениваешь день?')
+            await state.set_state(ClientState.personal_rate)
+        except:
+            await message.answer(f'"{user_message}" некорректные данные')
+    else:
+        await state.update_data(user_message=0.0)
+        await message.answer('Насколько из 10 сам оцениваешь день?')
+        await state.set_state(ClientState.personal_rate)
+
 
 
 @dp.message(ClientState.personal_rate)
