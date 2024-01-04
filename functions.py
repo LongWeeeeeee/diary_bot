@@ -61,11 +61,9 @@ async def counter_max_days(data, daily_scores, message, activities):
     if negative_dict is None:
         negative_dict = {}
     column = data['Дела за день']
-    for current_word in daily_scores:
-        negative_dict[current_word] = counter_negative(current_word=current_word, column=column)
-    #исключаем из перебора активности которые сделали сегодня
-    for current_word in activities:
-        positive_dict[current_word] = counter_positive(current_word=current_word, column=column)
+    negative_dict = {current_word : counter_negative(current_word=current_word, column=column) for current_word in daily_scores}
+    positive_dict = {current_word: counter_negative(current_word=current_word, column=column) for current_word in
+                     activities}
     negative_output = '\n'.join(['{} : {}'.format(key, value) for key, value in negative_dict.items() if value not in [0, 1]])
     positive_output = '\n'.join(['{} : {}'.format(key, value) for key, value in positive_dict.items() if value not in [0, 1]])
     if positive_output:
