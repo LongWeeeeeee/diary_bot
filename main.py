@@ -15,7 +15,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import keys
 from sqlite import database_start, create_profile, edit_database
-from test_functions import generate_keyboard, diary_out, add_day_to_excel, normalized
+from functions import generate_keyboard, diary_out, add_day_to_excel, normalized
 
 bot = Bot(token=keys.Token)
 dp = Dispatcher()
