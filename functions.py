@@ -44,6 +44,19 @@ def counter_negative(column, current_word, count=0):
     return count
 
 
+def day_to_prefix(day: str) -> str:
+    day_to_prefix_dict = {
+        'воскресенье' : 'каждое',
+        'суббота' : 'каждую',
+        'пятница' : 'каждую',
+        'четверг' : 'каждый',
+        'среда' : 'каждую',
+        'вторник' : 'каждый',
+        'понедельник' : 'каждый'
+    }
+    return day_to_prefix_dict[day]
+
+
 def counter_positive(current_word, column, count=0):
     for words in column.iloc[::-1]:
         split_words = words.split(', ')
