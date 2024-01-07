@@ -101,6 +101,11 @@ async def date_jobs_0(message: Message, state: FSMContext) -> None:
     locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
     data = await state.get_data()
     if 'scheduler_arguments' in data:
+        output = data['scheduler_arguments']
+        output_list = list(output.keys())
+        numbered_list = [f"{i + 1}. {output_list[i]}" for i in range(len(output_list))]
+        await message.answer('Ваш предыдущий список дел:')
+        await message.answer("\n".join(numbered_list))
         await message.answer('Вы хотите добавить или удалить дело?', reply_markup=generate_keyboard(['Добавить', 'Удалить']))
         await state.set_state(ClientState.date_jobs_1)
     else:
@@ -111,18 +116,14 @@ async def date_jobs_0(message: Message, state: FSMContext) -> None:
 @dp.message(F.text == 'Удалить', ClientState.date_jobs_1)
 async def date_jobs_1(message: Message, state: FSMContext) -> None:
     normalized_message = normalized(message.text)
-    data = await state.get_data()
-    output = data['scheduler_arguments']
     if normalized_message == 'добавить':
-        await message.answer('Введите новое дело\nВаш предыдущий список дел:', reply_markup=remove_markup)
+        await message.answer('Введите новое дело', reply_markup=remove_markup)
         await state.set_state(ClientState.date_jobs)
 
     elif normalized_message == 'удалить':
         await message.answer('Введите номер задачи, которую хотели бы удалить', reply_markup=remove_markup)
         await state.set_state(ClientState.del_date_job)
-    output_list = list(output.keys())
-    numbered_list = [f"{i + 1}. {output_list[i]}" for i in range(len(output_list))]
-    await message.answer("\n".join(numbered_list))
+
 
 
 @dp.message(ClientState.del_date_job)
