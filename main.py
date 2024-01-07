@@ -152,7 +152,7 @@ async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
     user_message = normalized(message.text)
     if user_message == 'в день недели':
         keyboard = generate_keyboard(
-            ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'])
+            ['понедельник', 'вторник', 'среду', 'четверг', 'пятница', 'субботу', 'воскресенье'])
         await message.answer(
             'В какой день недели?', reply_markup=keyboard)
         await state.set_state(ClientState.date_jobs_week)
