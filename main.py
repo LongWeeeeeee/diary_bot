@@ -190,10 +190,10 @@ async def date_jobs_week(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
     day_of_week = translate[user_message]
-    scheduler.add_job(executing_scheduler_job, trigger="cron", hour=22, minute=18, day_of_week=day_of_week,
+    scheduler.add_job(executing_scheduler_job, trigger="cron", hour=7, minute=50, day_of_week=day_of_week,
                       args=(state, new_date_jobs))
     out_message = f'Я напомню вам : "{new_date_jobs}" {"каждую " + user_message[:-1] + "у" if user_message[-1] == "а" else "каждый " + user_message}'
-    await scheduler_list(message, state, out_message, user_states_data, trigger="cron", hour=22, minute=18,
+    await scheduler_list(message, state, out_message, user_states_data, trigger="cron", hour=7, minute=50,
                          day_of_week=day_of_week,
                          args=new_date_jobs)
     await state.set_state(ClientState.settings)
@@ -205,10 +205,10 @@ async def date_jobs_month(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
     day_of_month = message.text
-    scheduler.add_job(executing_scheduler_job, trigger="cron", day=f"{day_of_month}", hour=22, minute=18,
+    scheduler.add_job(executing_scheduler_job, trigger="cron", day=f"{day_of_month}", hour=7, minute=50,
                       args=(state, new_date_jobs))
     out_message = f'Я напомню вам : "{new_date_jobs}" каждый {day_of_month} день месяца'
-    await scheduler_list(message, state, out_message, user_states_data, day=day_of_month, hour=22, minute=18,
+    await scheduler_list(message, state, out_message, user_states_data, day=day_of_month, hour=7, minute=50,
                          trigger="cron", args=new_date_jobs)
     await state.set_state(ClientState.settings)
     await settings(message, state)
@@ -219,11 +219,11 @@ async def date_jobs_year(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
     date = datetime.datetime.strptime(message.text, '%d-%m')
-    scheduler.add_job(executing_scheduler_job, trigger="cron", day=date.day, month=date.month, hour=22, minute=18,
+    scheduler.add_job(executing_scheduler_job, trigger="cron", day=date.day, month=date.month, hour=7, minute=50,
                       args=(state, new_date_jobs))
     out_message = f'Я напомню вам : "{new_date_jobs}" каждое {date.day} {date.strftime("%B")}'
     await scheduler_list(message, state, out_message, user_states_data, trigger="cron", day=date.day, month=date.month,
-                         hour=22, minute=18,
+                         hour=7, minute=50,
                          args=new_date_jobs)
     await state.set_state(ClientState.settings)
     await settings(message, state)
@@ -233,7 +233,7 @@ async def date_jobs_year(message: Message, state: FSMContext) -> None:
 async def date_jobs_once(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
-    date = datetime.datetime.strptime(message.text, '%Y-%m-%d') + timedelta(hours=22, minutes=17)
+    date = datetime.datetime.strptime(message.text, '%Y-%m-%d') + timedelta(hours=7, minutes=50)
     if datetime.datetime.now() < date:
         out_message = f'Я напомню вам : "{new_date_jobs}" {date.day} {date.strftime("%B")} {date.year}'
 
