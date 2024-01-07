@@ -100,11 +100,10 @@ async def jobs_change(message: Message, state: FSMContext) -> None:
 async def date_jobs_0(message: Message, state: FSMContext) -> None:
     locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
     data = await state.get_data()
-    try:
-        output = data['scheduler_arguments']
-        await message.answer('Вы хотите добавить или удалить дело?', reply_markup=generate_keyboard(['Удалить', 'Добавить']))
+    if 'scheduler_arguments' in data:
+        await message.answer('Вы хотите добавить или удалить дело?', reply_markup=generate_keyboard(['Добавить', 'Удалить']))
         await state.set_state(ClientState.date_jobs_1)
-    except KeyError:
+    else:
         await message.answer('Введите запланированную задачу', reply_markup=remove_markup)
         await state.set_state(ClientState.date_jobs)
 
