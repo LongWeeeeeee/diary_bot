@@ -134,6 +134,8 @@ async def del_date_job(message: Message, state: FSMContext) -> None:
         scheduler_arguments = data['scheduler_arguments']
         keys_list = list(scheduler_arguments.keys())
         del scheduler_arguments[keys_list[num-1]]
+        if len(scheduler_arguments) == 0:
+            scheduler_arguments = '{}'
         await edit_database(scheduler_arguments=scheduler_arguments)
         await start(message, state)
     except ValueError:
