@@ -299,10 +299,6 @@ async def daily_jobs(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     daily_scores = user_states_data['daily_scores']
     await message.answer(', '.join(daily_scores))
-    await message.answer(
-        'Вы можете воспользоваться предложенным списком или написать свой. Данные могут быть какие '
-        'угодно, очки нужны для отчетности о том насколько продуктивен был день.\nСоблюдайте формат '
-        'данных!')
     await state.set_state(ClientState.new_daily_scores)
 
 
