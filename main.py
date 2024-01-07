@@ -15,7 +15,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import keys
 from sqlite import database_start, create_profile, edit_database
-from functions import generate_keyboard, diary_out, add_day_to_excel, normalized
+from functions import generate_keyboard, diary_out, add_day_to_excel, normalized, day_to_prefix
 
 bot = Bot(token=keys.Token)
 dp = Dispatcher()
@@ -193,7 +193,7 @@ async def date_jobs_week(message: Message, state: FSMContext) -> None:
     day_of_week = translate[user_message]
     scheduler.add_job(executing_scheduler_job, trigger="cron", hour=7, minute=50, day_of_week=day_of_week,
                       args=(state, new_date_jobs))
-    out_message = f'Я напомню вам : "{new_date_jobs}" {"каждую " + user_message[:-1] + "у" if user_message[-1] == "а" else "каждый " + user_message}'
+    out_message = f'Я напомню вам : "{new_date_jobs}" {day_to_prefix(user_message)} {user_message}'
     await scheduler_list(message, state, out_message, user_states_data, trigger="cron", hour=7, minute=50,
                          day_of_week=day_of_week,
                          args=new_date_jobs)
