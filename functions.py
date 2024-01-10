@@ -67,7 +67,7 @@ def counter_positive(current_word, column, count=0):
     return count
 
 
-async def counter_max_days(data, daily_scores, message, activities):
+async def counter_max_days(data, daily_scores, message, activities, output=''):
     negative_dict, positive_dict = {}, {}
     if negative_dict is None:
         negative_dict = {}
@@ -81,10 +81,12 @@ async def counter_max_days(data, daily_scores, message, activities):
     positive_output = '\n'.join(
         ['{} : {}'.format(key, value) for key, value in positive_dict.items() if value not in [0, 1]])
     if positive_output:
-        await message.answer('Поздравляю! Вы соблюдаете эти дела уже столько дней: ' + '\n' + positive_output)
+        output += f'Поздравляю! Вы соблюдаете эти дела уже столько дней:\n{positive_output}'
     if negative_output:
-        await message.answer(
-            f'Вы не делали эти дела уже столько дней:\n{negative_output}\nМожет стоит дать им еще один шанс?')
+        if output != '': output += '\n\n'
+        output += f'Вы не делали эти дела уже столько дней:\n{negative_output}\n\nМожет стоит дать им еще один шанс?'
+    sent_message = await message.answer(output)
+    await message.bot.pin_chat_message(message.chat.id, sent_message.message_id)
 
 
 def generate_keyboard(buttons: list):
