@@ -125,9 +125,9 @@ async def diary_out(message):
 
     # Перебор и отправка последних 7 строк
     for index, row in last_entries.iterrows():
-        message_sheet = "{} | {} | {} | {} | {} | {} | {} | {}".format(row["Дата"], row["Дела за день"], row["Шаги"],
+        message_sheet = "{} | {} | {} | {} | {} | {} | {}".format(row["Дата"], row["Дела за день"], row["Шаги"],
                                                                        row["Total sleep"], row['Deep sleep'],
-                                                                       row['О дне'], row['My rate'], row['Total'])
+                                                                       row['О дне'], row['My rate'])
 
         # Разделение длинного сообщения на части
         message_parts = [message_sheet[i:i + 4096] for i in range(0, len(message_sheet), 4096)]
