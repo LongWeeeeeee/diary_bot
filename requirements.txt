@@ -26,4 +26,5 @@ typing_extensions==4.9.0
 tzdata==2023.3
 tzlocal==5.2
 urllib3==2.1.0
+XlsxWriter==3.1.9
 yarl==1.9.4
