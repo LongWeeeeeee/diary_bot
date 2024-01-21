@@ -3,7 +3,7 @@ import datetime
 import json
 import locale
 from datetime import timedelta
-
+import logging
 from aiogram import Bot, Dispatcher
 from aiogram import types, F
 from aiogram.filters.command import Command
@@ -22,6 +22,8 @@ dp = Dispatcher()
 already_started = False
 start = True
 locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 remove_markup = types.ReplyKeyboardRemove()
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 negative_responses = {'не', 'нет', '-', 'pass', 'пасс', 'не хочу', 'скип', 'неа', 'не-а', '0', 0}
@@ -57,23 +59,26 @@ class ClientState(StatesGroup):
 @dp.message(Command(commands=["start"]))
 @dp.message(F.text == "Заполнить дневник")
 async def start(message: Message, state: FSMContext) -> None:
-    answer = await create_profile(user_id=message.from_user.id)
-    if answer is not None:
-        data = {}
-        if answer[1] != '':
-            daily_scores = json.loads(answer[1])
-            data['daily_scores'] = daily_scores
-        if answer[2] != '[]':
-            one_time_jobs = json.loads(answer[2])
-            data['one_time_jobs'] = one_time_jobs
-        if answer[3] not in ['"{}"', {}, '{}']:
-            scheduler = json.loads(answer[3])
-            data['scheduler_arguments'] = scheduler
-        await state.update_data(**data)
-        await existing_user(message, state)
-    else:
-        await handle_new_user(message, state)
-    await start_scheduler(message, state)
+    try:
+        answer = await create_profile(user_id=message.from_user.id)
+        if answer is not None:
+            data = {}
+            if answer[1] != '':
+                daily_scores = json.loads(answer[1])
+                data['daily_scores'] = daily_scores
+            if answer[2] != '[]':
+                one_time_jobs = json.loads(answer[2])
+                data['one_time_jobs'] = one_time_jobs
+            if answer[3] not in ['"{}"', {}, '{}']:
+                scheduler = json.loads(answer[3])
+                data['scheduler_arguments'] = scheduler
+            await state.update_data(**data)
+            await existing_user(message, state)
+        else:
+            await handle_new_user(message, state)
+        await start_scheduler(message, state)
+    except Exception as e:
+        logger.error(f"Произошла ошибка: {e}", exc_info=True)
 
 
 @dp.message(F.text == 'Вывести дневник')
@@ -468,8 +473,7 @@ async def existing_user(message, state):
         await message.answer(
             'Разовые дела:')
         await message.answer(one_time_jobs)
-    except KeyError:
-        pass
+    except KeyError: pass
     if 'scheduler_arguments' in user_data:
         #загрузка в scheduler заданий из database
         for key in list(user_data['scheduler_arguments'].keys()):
