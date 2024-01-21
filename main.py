@@ -12,10 +12,21 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import FSInputFile
 from aiogram.types import Message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
 import keys
 from sqlite import database_start, create_profile, edit_database
 from functions import generate_keyboard, diary_out, add_day_to_excel, normalized, day_to_prefix
+import sentry_sdk
+
+sentry_sdk.init(
+    dsn="https://c1bd1f87de070e4aab0f0a19755b6808@o4506608120037376.ingest.sentry.io/4506608123510784",
+    # Set traces_sample_rate to 1.0 to capture 100%
+    # of transactions for performance monitoring.
+    traces_sample_rate=1.0,
+    # Set profiles_sample_rate to 1.0 to profile 100%
+    # of sampled transactions.
+    # We recommend adjusting this value in production.
+    profiles_sample_rate=1.0,
+)
 
 bot = Bot(token=keys.Token)
 dp = Dispatcher()
