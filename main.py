@@ -346,25 +346,28 @@ async def update_daily_jobs(message: Message, state: FSMContext) -> None:
 
 @dp.message(ClientState.greet)
 async def my_steps(message: Message, state: FSMContext) -> None:
-    user_states_data = await state.get_data()
-    daily_scores = user_states_data['daily_scores']
-    user_message = normalized(message.text)
-    # обработка ежедневных дел
-    errors = [activity for activity in user_message.split(', ') if
-              activity not in daily_scores]
-    if errors:
-        for error in errors:
-            await message.answer(f"{error} нету в списке!")
-    else:
-        await state.update_data(activities=user_message.split(', '))
-        try:
-            one_time_jobs = user_states_data['one_time_jobs']
-            await message.answer(f'Введите разовые дела, которые выполнили. Список разовых дел:')
-            await message.answer(one_time_jobs)
-            await state.set_state(ClientState.one_time_jobs_proceed)
-        except KeyError:
-            await message.answer("Сколько сделал шагов?")
-            await state.set_state(ClientState.steps)
+    try:
+        user_states_data = await state.get_data()
+        daily_scores = user_states_data['daily_scores']
+        user_message = normalized(message.text)
+        # обработка ежедневных дел
+        errors = [activity for activity in user_message.split(', ') if
+                  activity not in daily_scores]
+        if errors:
+            for error in errors:
+                await message.answer(f"{error} нету в списке!")
+        else:
+            await state.update_data(activities=user_message.split(', '))
+            try:
+                one_time_jobs = user_states_data['one_time_jobs']
+                await message.answer(f'Введите разовые дела, которые выполнили. Список разовых дел:')
+                await message.answer(one_time_jobs)
+                await state.set_state(ClientState.one_time_jobs_proceed)
+            except KeyError:
+                await message.answer("Сколько сделал шагов?")
+                await state.set_state(ClientState.steps)
+    except Exception as e:
+        logger.error(f"Произошла ошибка: {e}", exc_info=True)
 
 
 @dp.message(ClientState.one_time_jobs_proceed)
