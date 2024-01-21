@@ -1,6 +1,6 @@
 import re
 from datetime import timedelta
-
+import xlsxwriter
 import pandas as pd
 from aiogram import types
 
@@ -14,10 +14,7 @@ async def add_day_to_excel(date, activities: list, total_sleep: float, deep_slee
     try:
         data = pd.read_excel(path)
     except FileNotFoundError:
-        data = pd.DataFrame(
-            columns=['Дата', 'Дела за день', 'Шаги', 'Total sleep', 'Deep sleep', 'О дне', 'My rate'])
-
-    # Вывод подсчета сколько дней делали и не делал дела из daily_scores в бота
+        data = pd.DataFrame(columns=['Дата', 'Дела за день', 'Шаги', 'Total sleep', 'Deep sleep', 'О дне', 'My rate'])
 
     last_row = data.index.max() + 1
     yesterday = date - timedelta(days=1)
@@ -28,8 +25,23 @@ async def add_day_to_excel(date, activities: list, total_sleep: float, deep_slee
     data.loc[last_row, 'Deep sleep'] = deep_sleep
     data.loc[last_row, 'О дне'] = user_message
     data.loc[last_row, 'My rate'] = personal_rate
+    writer = pd.ExcelWriter(path, engine='xlsxwriter')
+    data.to_excel(writer, index=False, sheet_name='Лист1')
 
-    data.to_excel(path, index=False)
+    workbook = writer.book
+    worksheet = writer.sheets['Лист1']
+    cell_format = workbook.add_format({'text_wrap': True})
+    cell_format_middle = workbook.add_format({
+        'text_wrap': True,
+        'align': 'center'
+    })
+    for row, size in zip(['B', 'F'], [60, 122]):
+        worksheet.set_column(f'{row}:{row}', size, cell_format)  # Установить ширину столбца A равной 20
+    for row in ['A', 'C', 'D', 'E', 'G']:
+        # Устанавливаем ширину столбцов
+        worksheet.set_column(f'{row}:{row}', 10, cell_format_middle)  # Установить ширину столбца A равной 20
+
+    writer._save()
 
     await counter_max_days(data=data, daily_scores=daily_scores, message=message, activities=activities)
 

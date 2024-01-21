@@ -322,7 +322,7 @@ async def daily_jobs(message: Message, state: FSMContext) -> None:
 
 
 @dp.message(F.text == 'Скачать дневник')
-async def diary_download(message: Message) -> None:
+async def download_diary(message: Message) -> None:
     try:
         await message.answer_document(
             document=FSInputFile(f'{message.from_user.id}_Diary.xlsx'),
