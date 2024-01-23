@@ -465,9 +465,7 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
             await state.set_state(ClientState.greet)
         else:
             await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
-
-    except Exception as e:
-        print(e)
+    except ValueError:
         await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
 
 
