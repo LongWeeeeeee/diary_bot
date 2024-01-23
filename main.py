@@ -449,7 +449,7 @@ async def process_about_day(message: Message, state: FSMContext) -> None:
 async def process_personal_rate(message: Message, state: FSMContext) -> None:
     try:
         personal_rate = float(message.text)
-        if personal_rate <= 10.0 and personal_rate >= 0.0:
+        if personal_rate <= 10 and personal_rate >= 0:
             user_states_data = await state.get_data()
             daily_scores = user_states_data['daily_scores']
             date = datetime.datetime.now()
@@ -464,11 +464,11 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
                                    user_message, message)
             await state.set_state(ClientState.greet)
         else:
-            await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
+            await message.answer(f'"{message.text}" должно быть числом от 0 до 10')
 
     except Exception as e:
         print(e)
-        await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
+        await message.answer(f'"{message.text}" должно быть числом от 0 до 10')
 
 
 async def existing_user(message, state):
