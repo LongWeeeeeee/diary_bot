@@ -513,7 +513,7 @@ async def existing_user(message, state):
             del user_data['scheduler_arguments']
             await state.set_data(user_data)
             await edit_database(scheduler_arguments={})
-        await state.set_state(ClientState.greet)
+    await state.set_state(ClientState.greet)
 
 
 
