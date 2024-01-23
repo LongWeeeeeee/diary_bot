@@ -423,7 +423,7 @@ async def process_total_sleep(message: Message, state: FSMContext) -> None:
 @dp.message(ClientState.deep_sleep)
 async def process_deep_sleep(message: Message, state: FSMContext) -> None:
     try:
-        user_message = float(message.text)
+        user_message = float(message.text.replace(',', '.'))
         await state.update_data(deep_sleep=message.text)
         await message.answer(
             'Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
@@ -448,7 +448,7 @@ async def process_about_day(message: Message, state: FSMContext) -> None:
 @dp.message(ClientState.personal_rate)
 async def process_personal_rate(message: Message, state: FSMContext) -> None:
     try:
-        personal_rate = float(message.text)
+        personal_rate = int(message.text)
         if personal_rate <= 10 and personal_rate >= 0:
             user_states_data = await state.get_data()
             daily_scores = user_states_data['daily_scores']
@@ -464,11 +464,11 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
                                    user_message, message)
             await state.set_state(ClientState.greet)
         else:
-            await message.answer(f'"{message.text}" должно быть числом от 0 до 10')
+            await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
 
     except Exception as e:
         print(e)
-        await message.answer(f'"{message.text}" должно быть числом от 0 до 10')
+        await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
 
 
 async def existing_user(message, state):
@@ -482,12 +482,11 @@ async def existing_user(message, state):
         await message.answer(
             'Впишите ежедневные дела которые вы вчера делали' + '\n'
             + 'Вы можете изменить списки в любой момент')
-    try:
+    if 'one_time_jobs' in user_data:
         one_time_jobs = user_data['one_time_jobs']
         await message.answer(
             'Разовые дела:')
         await message.answer(one_time_jobs)
-    except KeyError: pass
     if 'scheduler_arguments' in user_data:
         #загрузка в scheduler заданий из database
         for key in list(user_data['scheduler_arguments'].keys()):
@@ -514,7 +513,7 @@ async def existing_user(message, state):
             del user_data['scheduler_arguments']
             await state.set_data(user_data)
             await edit_database(scheduler_arguments={})
-    await state.set_state(ClientState.greet)
+        await state.set_state(ClientState.greet)
 
 
 
