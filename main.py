@@ -407,11 +407,14 @@ async def process_steps(message: Message, state: FSMContext) -> None:
 
 @dp.message(ClientState.total_sleep)
 async def process_total_sleep(message: Message, state: FSMContext) -> None:
-    user_message = message.text
-    if user_message not in negative_responses:
-        await state.update_data(total_sleep=user_message)
-        await message.answer('Сколько из них глубокий сон?')
-        await state.set_state(ClientState.deep_sleep)
+    if message.text not in negative_responses:
+        try:
+            user_message = float(message.text.replace(',', '.'))
+            await state.update_data(total_sleep=user_message)
+            await message.answer('Сколько из них глубокий сон?')
+            await state.set_state(ClientState.deep_sleep)
+        except ValueError:
+            await message.answer(f'"{message.text}" должно быть числом')
     else:
         await state.update_data(total_sleep=0.0)
         await state.update_data(deep_sleep=0.0)
@@ -424,12 +427,12 @@ async def process_total_sleep(message: Message, state: FSMContext) -> None:
 async def process_deep_sleep(message: Message, state: FSMContext) -> None:
     try:
         user_message = float(message.text.replace(',', '.'))
-        await state.update_data(deep_sleep=message.text)
+        await state.update_data(deep_sleep=user_message)
         await message.answer(
             'Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
         await state.set_state(ClientState.about_day)
     except ValueError:
-        await message.answer(f'"{message.text}" должен быть в десятичном формате, например: 1.1 или 0.3')
+        await message.answer(f'"{message.text}" должно быть числом')
 
 
 @dp.message(ClientState.about_day)
