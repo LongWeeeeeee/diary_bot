@@ -449,22 +449,19 @@ async def process_about_day(message: Message, state: FSMContext) -> None:
 async def process_personal_rate(message: Message, state: FSMContext) -> None:
     try:
         personal_rate = int(message.text)
-        if personal_rate <= 10 and personal_rate >= 0:
-            user_states_data = await state.get_data()
-            daily_scores = user_states_data['daily_scores']
-            date = datetime.datetime.now()
-            activities = user_states_data['activities']
-            user_message = user_states_data['user_message']
-            total_sleep = float(user_states_data['total_sleep'])
-            deep_sleep = float(user_states_data['deep_sleep'])
-            my_steps = int(user_states_data['mysteps'])
-            user_id = message.from_user.id
-            await add_day_to_excel(date, activities, total_sleep, deep_sleep, personal_rate, my_steps, user_id,
-                                   daily_scores,
-                                   user_message, message)
-            await state.set_state(ClientState.greet)
-        else:
-            await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
+        user_states_data = await state.get_data()
+        daily_scores = user_states_data['daily_scores']
+        date = datetime.datetime.now()
+        activities = user_states_data['activities']
+        user_message = user_states_data['user_message']
+        total_sleep = float(user_states_data['total_sleep'])
+        deep_sleep = float(user_states_data['deep_sleep'])
+        my_steps = int(user_states_data['mysteps'])
+        user_id = message.from_user.id
+        await add_day_to_excel(date, activities, total_sleep, deep_sleep, personal_rate, my_steps, user_id,
+                               daily_scores,
+                               user_message, message)
+        await state.set_state(ClientState.greet)
     except ValueError:
         await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
 
