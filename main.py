@@ -375,6 +375,7 @@ async def process_one_time(message: Message, state: FSMContext) -> None:
     text = normalized(message.text).split(', ')
     data = await state.get_data()
     one_time_jobs = data['one_time_jobs']
+    one_time_jobs = one_time_jobs.split(', ')
     for jobs in text:
         if jobs in negative_responses:
             await message.answer("Сколько сделал шагов?")
@@ -384,7 +385,6 @@ async def process_one_time(message: Message, state: FSMContext) -> None:
             await message.answer(f'{jobs} нету в списке разовых дел!')
             return
         else:
-            one_time_jobs = one_time_jobs.split(', ')
             one_time_jobs.remove(jobs)
     await edit_database(one_time_jobs=', '.join(one_time_jobs))
     if not one_time_jobs:
