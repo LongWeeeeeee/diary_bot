@@ -352,7 +352,7 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
                 one_time_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
             one_time_builder.adjust(1, 1)
             new_ot_builder = InlineKeyboardBuilder()
-            new_ot_builder.button(text="Отправить", callback_data="Отправить")
+            new_ot_builder.button(text="🚀Отправить 🚀", callback_data="Отправить")
             one_time_builder.attach(new_ot_builder)
             await call.message.answer('Отметьте разовые дела', reply_markup=one_time_builder.as_markup())
             await state.update_data(chosen_tasks=[])
@@ -380,7 +380,7 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
 
         builder.adjust(2, 2)
         new_builder = InlineKeyboardBuilder()
-        new_builder.button(text="Отправить", callback_data="Отправить")
+        new_builder.button(text="🚀Отправить 🚀", callback_data="Отправить")
         builder.attach(new_builder)
 
         await bot.edit_message_reply_markup(
@@ -425,7 +425,7 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
 
         a_builder.adjust(1, 1)
         a_new_builder = InlineKeyboardBuilder()
-        a_new_builder.button(text="Отправить", callback_data="Отправить")
+        a_new_builder.button(text="🚀Отправить 🚀", callback_data="Отправить")
         a_builder.attach(a_new_builder)
 
         await bot.edit_message_reply_markup(
@@ -513,10 +513,17 @@ async def existing_user(message, state):
         daily_scores = user_data['daily_scores']
         builder = InlineKeyboardBuilder()
         for index, job in enumerate(daily_scores):
+            # word = ''
+            # for i in job.split(' '):
+            #     if len(word) > 12:
+            #         word += '/n'
+            #         word += i
+            #     else:
+            #         word += i
             builder.button(text=f"{job} ✔️", callback_data=f"{index}")
         builder.adjust(2, 2)
         new_builder = InlineKeyboardBuilder()
-        new_builder.button(text="Отправить", callback_data="Отправить")
+        new_builder.button(text="🚀Отправить 🚀", callback_data="Отправить")
         builder.attach(new_builder)
         await message.answer(
             'Отметьте вчерашние дела', reply_markup=builder.as_markup())
