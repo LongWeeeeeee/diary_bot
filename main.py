@@ -70,7 +70,6 @@ async def start(message: Message, state: FSMContext) -> None:
         if answer[3] not in ['"{}"', {}, '{}']:
             scheduler = json.loads(answer[3])
             data['scheduler_arguments'] = scheduler
-        data['message'] = message
         data['chosen_tasks'] = []
         await state.update_data(**data)
         await existing_user(message, state)
@@ -341,13 +340,11 @@ async def change_daily_jobs(message: Message, state: FSMContext) -> None:
 @dp.callback_query(ClientState.greet)
 async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
     data = call.data
-    user_states_data = await state.get_data()
-    daily_scores = user_states_data['daily_scores']
-    chosen_tasks = user_states_data['chosen_tasks']
-    # Add the task to the list of chosen tasks
     if data == 'Отправить':
+        # await bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+        user_states_data = await state.get_data()
+        chosen_tasks = user_states_data['chosen_tasks']
         await state.update_data(activities=chosen_tasks)
-        message = user_states_data['message']
         try:
             one_time_jobs = user_states_data['one_time_jobs']
             one_time_builder = InlineKeyboardBuilder()
@@ -357,19 +354,23 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
             new_ot_builder = InlineKeyboardBuilder()
             new_ot_builder.button(text="Отправить", callback_data="Отправить")
             one_time_builder.attach(new_ot_builder)
-            await message.answer('Отметьте разовые дела', reply_markup=one_time_builder.as_markup())
+            await call.message.answer('Отметьте разовые дела', reply_markup=one_time_builder.as_markup())
             await state.update_data(chosen_tasks=[])
             await state.set_state(ClientState.one_time_jobs_proceed)
         except KeyError:
-            await message.answer("Сколько сделал шагов?")
+            await call.message.answer("Сколько сделал шагов?")
             await state.set_state(ClientState.steps)
 
     else:
+        user_states_data = await state.get_data()
+        daily_scores = user_states_data['daily_scores']
+        chosen_tasks = user_states_data['chosen_tasks']
         data = int(data)
         if daily_scores[data] in chosen_tasks:
             chosen_tasks.remove(daily_scores[data])
         else:
             chosen_tasks.append(daily_scores[data])
+        await state.update_data(chosen_tasks=chosen_tasks)
         builder = InlineKeyboardBuilder()
         for index, job in enumerate(daily_scores):
             if job in chosen_tasks:
@@ -394,23 +395,27 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(ClientState.one_time_jobs_proceed)
 async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None:
     data = call.data
-    user_states_data = await state.get_data()
-    message = user_states_data['message']
-    one_time_jobs = user_states_data['one_time_jobs']
-    chosen_tasks = user_states_data['chosen_tasks']
     if data == 'Отправить':
+        user_states_data = await state.get_data()
+        one_time_jobs = user_states_data['one_time_jobs']
+        chosen_tasks = user_states_data['chosen_tasks']
+        # await bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
         for iter in chosen_tasks:
             one_time_jobs.remove(iter)
         await state.update_data(one_time_jobs=one_time_jobs)
         await edit_database(one_time_jobs=one_time_jobs)
-        await message.answer("Сколько сделал шагов?")
+        await call.message.answer("Сколько сделал шагов?")
         await state.set_state(ClientState.steps)
     else:
+        user_states_data = await state.get_data()
+        one_time_jobs = user_states_data['one_time_jobs']
+        chosen_tasks = user_states_data['chosen_tasks']
         data = int(data)
-        if data in chosen_tasks:
+        if one_time_jobs[data] in chosen_tasks:
             chosen_tasks.remove(one_time_jobs[data])
         else:
             chosen_tasks.append(one_time_jobs[data])
+        await state.update_data(chosen_tasks=chosen_tasks)
         a_builder = InlineKeyboardBuilder()
         for index, job in enumerate(one_time_jobs):
             if job in chosen_tasks:
