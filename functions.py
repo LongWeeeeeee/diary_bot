@@ -101,22 +101,18 @@ async def counter_max_days(data, daily_scores, message, activities, output=''):
     await message.bot.pin_chat_message(message.chat.id, sent_message.message_id)
 
 
-def generate_keyboard(buttons: list):
-    """
-    Create a main keyboard with customizable buttons.
-
-    Args:
-        buttons (list): A list of strings representing the text for each button.
-
-    Returns:
-        types.ReplyKeyboardMarkup: The created main keyboard.
-    """
-    kb = [[types.KeyboardButton(text=button) for button in buttons]]
+def generate_keyboard(buttons: list, last_button = None):
+    if last_button != None:
+        kb = [[types.KeyboardButton(text=button) for button in buttons], [types.KeyboardButton(text=last_button)]]
+    else:
+        kb = [[types.KeyboardButton(text=button) for button in buttons]]
     keyboard = types.ReplyKeyboardMarkup(
         keyboard=kb,
         resize_keyboard=True,
     )
     return keyboard
+
+
 
 
 def normalized(text):

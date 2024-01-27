@@ -3,7 +3,7 @@ import datetime
 import json
 import locale
 from datetime import timedelta
-import logging
+
 from aiogram import Bot, Dispatcher
 from aiogram import types, F
 from aiogram.filters.command import Command
@@ -11,30 +11,19 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import FSInputFile
 from aiogram.types import Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import keys
-from sqlite import database_start, create_profile, edit_database
-from functions import generate_keyboard, diary_out, add_day_to_excel, normalized, day_to_prefix
-import sentry_sdk
 
-sentry_sdk.init(
-    dsn="https://c1bd1f87de070e4aab0f0a19755b6808@o4506608120037376.ingest.sentry.io/4506608123510784",
-    # Set traces_sample_rate to 1.0 to capture 100%
-    # of transactions for performance monitoring.
-    traces_sample_rate=1.0,
-    # Set profiles_sample_rate to 1.0 to profile 100%
-    # of sampled transactions.
-    # We recommend adjusting this value in production.
-    profiles_sample_rate=1.0,
-)
+import keys
+from functions import generate_keyboard, diary_out, add_day_to_excel, normalized, day_to_prefix
+from sqlite import database_start, create_profile, edit_database
 
 bot = Bot(token=keys.Token)
 dp = Dispatcher()
+
 already_started = False
 start = True
 locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 remove_markup = types.ReplyKeyboardRemove()
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 negative_responses = {'не', 'нет', '-', 'pass', 'пасс', 'не хочу', 'скип', 'неа', 'не-а', '0', 0}
@@ -53,7 +42,6 @@ class ClientState(StatesGroup):
     personal_rate = State()
     settings = State()
     download = State()
-    jobs = State()
     one_time_jobs_2 = State()
     one_time_jobs_proceed = State()
     date_jobs = State()
@@ -70,26 +58,25 @@ class ClientState(StatesGroup):
 @dp.message(Command(commands=["start"]))
 @dp.message(F.text == "Заполнить дневник")
 async def start(message: Message, state: FSMContext) -> None:
-    try:
-        answer = await create_profile(user_id=message.from_user.id)
-        if answer is not None:
-            data = {}
-            if answer[1] != '':
-                daily_scores = json.loads(answer[1])
-                data['daily_scores'] = daily_scores
-            if answer[2] != '[]':
-                one_time_jobs = json.loads(answer[2])
-                data['one_time_jobs'] = one_time_jobs
-            if answer[3] not in ['"{}"', {}, '{}']:
-                scheduler = json.loads(answer[3])
-                data['scheduler_arguments'] = scheduler
-            await state.update_data(**data)
-            await existing_user(message, state)
-        else:
-            await handle_new_user(message, state)
-        await start_scheduler(message, state)
-    except Exception as e:
-        logger.error(f"Произошла ошибка: {e}", exc_info=True)
+    answer = await create_profile(user_id=message.from_user.id)
+    if answer is not None:
+        data = {}
+        if answer[1] != '':
+            daily_scores = json.loads(answer[1])
+            data['daily_scores'] = daily_scores
+        if answer[2] != '[]':
+            one_time_jobs = json.loads(answer[2])
+            data['one_time_jobs'] = one_time_jobs
+        if answer[3] not in ['"{}"', {}, '{}']:
+            scheduler = json.loads(answer[3])
+            data['scheduler_arguments'] = scheduler
+        data['message'] = message
+        data['chosen_tasks'] = []
+        await state.update_data(**data)
+        await existing_user(message, state)
+    else:
+        await handle_new_user(message, state)
+    await start_scheduler(message, state)
 
 
 @dp.message(F.text == 'Вывести дневник')
@@ -100,19 +87,13 @@ async def diary_output(message: Message, state: FSMContext) -> None:
 
 @dp.message(F.text == 'Настройки')
 async def settings(message: Message, state: FSMContext) -> None:
-    keyboard = generate_keyboard(["Изменить Дела", "Скачать дневник", "Заполнить дневник"])
+    keyboard = generate_keyboard(['Ежедневные дела', 'Разовые дела', 'В определенную дату'],
+                                 last_button="Заполнить дневник")
     await message.answer(text='Здесь вы можете изменить свои настройки', reply_markup=keyboard)
     await state.set_state(ClientState.settings)
 
 
-@dp.message(F.text == 'Изменить Дела', ClientState.settings)
-async def jobs_change(message: Message, state: FSMContext) -> None:
-    keyboard = generate_keyboard(["Ежедневные дела", "Разовые дела", 'В определенную дату'])
-    await message.answer(text='Выберите интересующее вас дело', reply_markup=keyboard)
-    await state.set_state(ClientState.jobs)
-
-
-@dp.message(F.text == 'В определенную дату', ClientState.jobs)
+@dp.message(F.text == 'В определенную дату', ClientState.settings)
 async def date_jobs_0(message: Message, state: FSMContext) -> None:
     locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
     data = await state.get_data()
@@ -122,11 +103,13 @@ async def date_jobs_0(message: Message, state: FSMContext) -> None:
         numbered_list = [f"{i + 1}. {output_list[i]}" for i in range(len(output_list))]
         await message.answer('Ваш предыдущий список дел:')
         await message.answer("\n".join(numbered_list))
-        await message.answer('Вы хотите добавить или удалить дело?', reply_markup=generate_keyboard(['Добавить', 'Удалить']))
+        await message.answer('Вы хотите добавить или удалить дело?',
+                             reply_markup=generate_keyboard(['Добавить', 'Удалить']))
         await state.set_state(ClientState.date_jobs_1)
     else:
         await message.answer('Введите запланированную задачу', reply_markup=remove_markup)
         await state.set_state(ClientState.date_jobs)
+
 
 @dp.message(F.text == 'Добавить', ClientState.date_jobs_1)
 @dp.message(F.text == 'Удалить', ClientState.date_jobs_1)
@@ -141,7 +124,6 @@ async def date_jobs_1(message: Message, state: FSMContext) -> None:
         await state.set_state(ClientState.del_date_job)
 
 
-
 @dp.message(ClientState.del_date_job)
 async def del_date_job(message: Message, state: FSMContext) -> None:
     try:
@@ -149,13 +131,14 @@ async def del_date_job(message: Message, state: FSMContext) -> None:
         data = await state.get_data()
         scheduler_arguments = data['scheduler_arguments']
         for num in list:
-            del scheduler_arguments[int(num)-1]
+            del scheduler_arguments[int(num) - 1]
         if len(scheduler_arguments) == 0:
             scheduler_arguments = '{}'
         await edit_database(scheduler_arguments=scheduler_arguments)
         await start(message, state)
     except ValueError:
         await message.answer('Введите номер задач, которые вы хотели бы удалить', reply_markup=remove_markup)
+
 
 @dp.message(ClientState.date_jobs)
 async def date_jobs_job(message: Message, state: FSMContext) -> None:
@@ -192,15 +175,15 @@ async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
 
 
 async def scheduler_list(message, state, out_message, user_states_data, **kwargs):
-    #загрузка аргументов в database
+    # загрузка аргументов в database
     await message.answer(out_message)
     try:
         scheduler_arguments = user_states_data['scheduler_arguments']
         scheduler_arguments[out_message] = {**kwargs}
     except KeyError:
         scheduler_arguments = {out_message: {**kwargs}}
-    await edit_database(scheduler_arguments = scheduler_arguments)
-    await state.update_data(scheduler_arguments = scheduler_arguments)
+    await edit_database(scheduler_arguments=scheduler_arguments)
+    await state.update_data(scheduler_arguments=scheduler_arguments)
 
 
 @dp.message(ClientState.date_jobs_week)
@@ -214,6 +197,7 @@ async def date_jobs_week(message: Message, state: FSMContext) -> None:
                          day_of_week=day_of_week,
                          args=new_date_jobs)
     await start(message, state)
+
 
 @dp.message(ClientState.date_jobs_month)
 async def date_jobs_month(message: Message, state: FSMContext) -> None:
@@ -259,7 +243,8 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
 
     if datetime.datetime.now() < date:
         out_message = f'Я напомню вам : "{new_date_jobs}" {date.day} {date.strftime("%B")} {date.year}'
-        await scheduler_list(message, state, out_message, user_states_data, trigger="date", run_date=date.strftime("%Y-%m-%d %H:%M"),
+        await scheduler_list(message, state, out_message, user_states_data, trigger="date",
+                             run_date=date.strftime("%Y-%m-%d %H:%M"),
                              args=new_date_jobs)
         await start(message, state)
     else:
@@ -274,7 +259,7 @@ async def executing_scheduler_job(state, out_message):
     if scheduler_arguments[out_message]['trigger'] == 'date':
         del scheduler_arguments[out_message]
         await edit_database(scheduler_arguments=scheduler_arguments)
-    #Я напомню вам : "тес" 14 января 2024
+    # Я напомню вам : "тес" 14 января 2024
     job = normalized(out_message.split(' : ')[1]).replace('"', '')
     try:
         one_time_jobs = user_states_data['one_time_jobs']
@@ -286,8 +271,7 @@ async def executing_scheduler_job(state, out_message):
         await edit_database(one_time_jobs=job)
 
 
-
-@dp.message(F.text == 'Разовые дела', ClientState.jobs)
+@dp.message(F.text == 'Разовые дела', ClientState.settings)
 async def change_one_time_jobs(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     try:
@@ -295,7 +279,7 @@ async def change_one_time_jobs(message: Message, state: FSMContext) -> None:
         await message.answer(
             'Введите новый список разовых дел через запятую. Ваш предыдущий список:',
             reply_markup=remove_markup)
-        await message.answer(one_time_jobs)
+        await message.answer(', '.join(one_time_jobs))
     except KeyError:
         await message.answer('Введите новый список разовых дел через запятую', reply_markup=remove_markup)
     await state.set_state(ClientState.one_time_jobs_2)
@@ -304,14 +288,19 @@ async def change_one_time_jobs(message: Message, state: FSMContext) -> None:
 @dp.message(ClientState.one_time_jobs_2)
 async def change_one_time_jobs_2(message: Message, state: FSMContext) -> None:
     one_time_jobs_str = normalized(message.text)
-    await edit_database(one_time_jobs=one_time_jobs_str)
+    for i in one_time_jobs_str.split(', '):
+        num = len(i) - 44
+        if num > 0:
+            await message.answer(f'"{i}" Должно быть короче на {num} cимвола\nПопробуйте использовать эмодзи 🎸🕺🍫 или разбейте на 2')
+            return
+    await edit_database(one_time_jobs=one_time_jobs_str.split(', '))
     await message.answer(f'Отлично, теперь ваш список разовых дел выглядит так:')
     await message.answer(one_time_jobs_str)
-    await state.update_data(one_time_jobs=one_time_jobs_str)
+    await state.update_data(one_time_jobs=one_time_jobs_str.split(', '))
     await settings(message, state)
 
 
-@dp.message(F.text == 'Ежедневные дела', ClientState.jobs)
+@dp.message(F.text == 'Ежедневные дела', ClientState.settings)
 async def daily_jobs(message: Message, state: FSMContext) -> None:
     await message.answer('Введите новый список ежедневных. Ваш предыдущий список: ',
                          reply_markup=remove_markup)
@@ -333,9 +322,14 @@ async def download_diary(message: Message) -> None:
 
 
 @dp.message(ClientState.new_daily_scores)
-async def update_daily_jobs(message: Message, state: FSMContext) -> None:
+async def change_daily_jobs(message: Message, state: FSMContext) -> None:
     user_message = normalized(message.text)
     str_data = user_message.split(', ')
+    for i in str_data:
+        num = len(i) - 22
+        if num > 0:
+            await message.answer(f'"{i}" Должно быть короче на {num} cимвола\n Попробуйте использовать эмодзи 🎸🕺🍫')
+            return
     daily_scores = [one_jobs for one_jobs in str_data]
     await state.update_data(daily_scores=daily_scores)
     await edit_database(daily_scores=daily_scores)
@@ -344,58 +338,97 @@ async def update_daily_jobs(message: Message, state: FSMContext) -> None:
     await settings(message, state)
 
 
-@dp.message(ClientState.greet)
-async def my_steps(message: Message, state: FSMContext) -> None:
-    try:
-        user_states_data = await state.get_data()
-        daily_scores = user_states_data['daily_scores']
-        user_message = normalized(message.text)
-        # обработка ежедневных дел
-        errors = [activity for activity in user_message.split(', ') if
-                  activity not in daily_scores]
-        if errors:
-            for error in errors:
-                await message.answer(f"{error} нету в списке!")
-        else:
-            await state.update_data(activities=user_message.split(', '))
-            try:
-                one_time_jobs = user_states_data['one_time_jobs']
-                await message.answer(f'Введите разовые дела, которые выполнили. Список разовых дел:')
-                await message.answer(one_time_jobs)
-                await state.set_state(ClientState.one_time_jobs_proceed)
-            except KeyError:
-                await message.answer("Сколько сделал шагов?")
-                await state.set_state(ClientState.steps)
-    except Exception as e:
-        logger.error(f"Произошла ошибка: {e}", exc_info=True)
-
-
-@dp.message(ClientState.one_time_jobs_proceed)
-async def process_one_time(message: Message, state: FSMContext) -> None:
-    text = normalized(message.text).split(', ')
-    data = await state.get_data()
-    one_time_jobs = data['one_time_jobs']
-    one_time_jobs = one_time_jobs.split(', ')
-    for jobs in text:
-        if jobs in negative_responses:
+@dp.callback_query(ClientState.greet)
+async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
+    data = call.data
+    user_states_data = await state.get_data()
+    daily_scores = user_states_data['daily_scores']
+    chosen_tasks = user_states_data['chosen_tasks']
+    # Add the task to the list of chosen tasks
+    if data == 'Отправить':
+        await state.update_data(activities=chosen_tasks)
+        message = user_states_data['message']
+        try:
+            one_time_jobs = user_states_data['one_time_jobs']
+            one_time_builder = InlineKeyboardBuilder()
+            for index, job in enumerate(one_time_jobs):
+                one_time_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
+            one_time_builder.adjust(1, 1)
+            new_ot_builder = InlineKeyboardBuilder()
+            new_ot_builder.button(text="Отправить", callback_data="Отправить")
+            one_time_builder.attach(new_ot_builder)
+            await message.answer('Отметьте разовые дела', reply_markup=one_time_builder.as_markup())
+            await state.update_data(chosen_tasks=[])
+            await state.set_state(ClientState.one_time_jobs_proceed)
+        except KeyError:
             await message.answer("Сколько сделал шагов?")
             await state.set_state(ClientState.steps)
-            return
-        elif jobs not in one_time_jobs:
-            await message.answer(f'{jobs} нету в списке разовых дел!')
-            return
-        else:
-            one_time_jobs.remove(jobs)
-    await edit_database(one_time_jobs=', '.join(one_time_jobs))
-    if not one_time_jobs:
-        await message.answer('Поздравляю! Вы выполнили все разовые дела, так держать')
-        del data['one_time_jobs']
-        await state.clear()
-        await state.set_data(data)
+
     else:
+        data = int(data)
+        if daily_scores[data] in chosen_tasks:
+            chosen_tasks.remove(daily_scores[data])
+        else:
+            chosen_tasks.append(daily_scores[data])
+        builder = InlineKeyboardBuilder()
+        for index, job in enumerate(daily_scores):
+            if job in chosen_tasks:
+                builder.button(text=f"{job} ✅️️", callback_data=f"{index}")
+            else:
+                builder.button(text=f"{job} ✔️", callback_data=f"{index}")
+
+        builder.adjust(2, 2)
+        new_builder = InlineKeyboardBuilder()
+        new_builder.button(text="Отправить", callback_data="Отправить")
+        builder.attach(new_builder)
+
+        await bot.edit_message_reply_markup(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=builder.as_markup()
+        )
+
+        await call.answer()
+
+
+@dp.callback_query(ClientState.one_time_jobs_proceed)
+async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None:
+    data = call.data
+    user_states_data = await state.get_data()
+    message = user_states_data['message']
+    one_time_jobs = user_states_data['one_time_jobs']
+    chosen_tasks = user_states_data['chosen_tasks']
+    if data == 'Отправить':
+        for iter in chosen_tasks:
+            one_time_jobs.remove(iter)
         await state.update_data(one_time_jobs=one_time_jobs)
-    await message.answer("Сколько сделал шагов?")
-    await state.set_state(ClientState.steps)
+        await edit_database(one_time_jobs=one_time_jobs)
+        await message.answer("Сколько сделал шагов?")
+        await state.set_state(ClientState.steps)
+    else:
+        data = int(data)
+        if data in chosen_tasks:
+            chosen_tasks.remove(one_time_jobs[data])
+        else:
+            chosen_tasks.append(one_time_jobs[data])
+        a_builder = InlineKeyboardBuilder()
+        for index, job in enumerate(one_time_jobs):
+            if job in chosen_tasks:
+                a_builder.button(text=f"{job} ✅️️", callback_data=f"{index}")
+            else:
+                a_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
+
+        a_builder.adjust(1, 1)
+        a_new_builder = InlineKeyboardBuilder()
+        a_new_builder.button(text="Отправить", callback_data="Отправить")
+        a_builder.attach(a_new_builder)
+
+        await bot.edit_message_reply_markup(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=a_builder.as_markup()
+        )
+        await call.answer()
 
 
 @dp.message(ClientState.steps)
@@ -473,20 +506,21 @@ async def existing_user(message, state):
     user_data = await state.get_data()
     if 'daily_scores' in user_data:
         daily_scores = user_data['daily_scores']
+        builder = InlineKeyboardBuilder()
+        for index, job in enumerate(daily_scores):
+            builder.button(text=f"{job} ✔️", callback_data=f"{index}")
+        builder.adjust(2, 2)
+        new_builder = InlineKeyboardBuilder()
+        new_builder.button(text="Отправить", callback_data="Отправить")
+        builder.attach(new_builder)
         await message.answer(
-            'Расскажи мне как провел вчерашний день?' + '\n' + 'Вот список ежедневных дел:')
+            'Отметьте вчерашние дела', reply_markup=builder.as_markup())
         keyboard = generate_keyboard(['Вывести дневник', 'Настройки', 'Заполнить дневник'])
-        await message.answer(', '.join(daily_scores), reply_markup=keyboard)
         await message.answer(
-            'Впишите ежедневные дела которые вы вчера делали' + '\n'
-            + 'Вы можете изменить списки в любой момент')
-    if 'one_time_jobs' in user_data:
-        one_time_jobs = user_data['one_time_jobs']
-        await message.answer(
-            'Разовые дела:')
-        await message.answer(one_time_jobs)
+            'После этого нажмите кнопку "Отправить"', reply_markup=keyboard)
+
     if 'scheduler_arguments' in user_data:
-        #загрузка в scheduler заданий из database
+        # загрузка в scheduler заданий из database
         for key in list(user_data['scheduler_arguments'].keys()):
             values = user_data['scheduler_arguments'][key]
             values_copy = values.copy()
@@ -512,7 +546,6 @@ async def existing_user(message, state):
             await state.set_data(user_data)
             await edit_database(scheduler_arguments={})
     await state.set_state(ClientState.greet)
-
 
 
 async def handle_new_user(message: Message, state):
