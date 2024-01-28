@@ -15,7 +15,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import keys
-from test_functions import generate_keyboard, diary_out, add_day_to_excel, normalized, day_to_prefix
+from functions import generate_keyboard, diary_out, add_day_to_excel, normalized, day_to_prefix
 from sqlite import database_start, create_profile, edit_database
 
 bot = Bot(token=keys.Token)
