@@ -113,7 +113,7 @@ async def start(message: Message, state: FSMContext) -> None:
 async def settings(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     if 'one_time_jobs' not in user_data:
-        keyboard = generate_keyboard(['Разовые дела', 'Дела в определенную дату'],
+        keyboard = generate_keyboard(['Добавить Разовые Дела', 'Дела в определенную дату'],
                                      last_button="В Главное Меню")
     else:
         keyboard = generate_keyboard(['Дела в определенную дату'],
