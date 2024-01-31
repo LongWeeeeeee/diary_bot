@@ -8,7 +8,7 @@ import os
 from datetime import timedelta
 
 from aiogram import Bot, Dispatcher
-from aiogram import types, F
+from aiogram import types
 from aiogram.filters.command import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -415,8 +415,7 @@ async def executing_scheduler_job(state, out_message):
         await state.update_data(one_time_jobs=job)
         await edit_database(one_time_jobs=job)
 
-
-@dp.message(F.text == 'Разовые дела', ClientState.settings)
+@dp.message(lambda message: message.text.lower() == 'добавить разовые дела', ClientState.settings)
 async def change_one_time_jobs(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     if 'one_time_jobs' in user_data:
@@ -466,8 +465,7 @@ async def change_one_time_jobs_2(message: Message, state: FSMContext) -> None:
     await state.update_data(one_time_jobs=one_time_jobs)
     await start(message, state)
 
-
-@dp.message(F.text == 'Скачать Дневник')
+@dp.message(lambda message: message.text.lower() == 'скачать дневник')
 async def download_diary(message: Message) -> None:
     try:
         await message.answer_document(
