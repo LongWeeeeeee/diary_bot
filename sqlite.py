@@ -17,7 +17,7 @@ async def database_start():
 async def create_profile(user_id):
     user = cur.execute("SELECT * FROM profile WHERE user_id = ?", (user_id,)).fetchone()
     if not user:
-        cur.execute("INSERT INTO profile VALUES(?,?,?,?)", (user_id, '', '[]', '{}'))
+        cur.execute("INSERT INTO profile VALUES(?,?,?,?)", (user_id, '[]', '[]', '{}'))
         db.commit()
     else:
         return cur.execute("SELECT * FROM profile WHERE user_id = ?", (user_id,)).fetchone()

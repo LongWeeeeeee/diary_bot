@@ -42,17 +42,21 @@ async def add_day_to_excel(date, activities: list, total_sleep: float, deep_slee
         worksheet.set_column(f'{row}:{row}', 10, cell_format_middle)  # Установить ширину столбца A равной 20
 
     writer._save()
-
-    await counter_max_days(data=data, daily_scores=daily_scores, message=message, activities=activities)
+    if not len(activities):
+        await message.answer('Поздравляю! дневник заполнен')
+    else:
+        await counter_max_days(data=data, daily_scores=daily_scores, message=message, activities=activities)
 
 
 def counter_negative(column, current_word, count=0):
     for words in column.iloc[::-1]:
-        split_words = words.split(', ')
-        for word in split_words:
-            if word == current_word:
-                return count
-        count += 1
+        if not isinstance(words, float):
+            split_words = words.split(', ')
+            for word in split_words:
+                if word == current_word:
+                    return count
+            count += 1
+        else: return count
     return count
 
 
@@ -71,9 +75,12 @@ def day_to_prefix(day: str) -> str:
 
 def counter_positive(current_word, column, count=0):
     for words in column.iloc[::-1]:
-        split_words = words.split(', ')
-        if current_word in split_words:
-            count += 1
+        if not isinstance(words, float):
+            split_words = words.split(', ')
+            if current_word in split_words:
+                count += 1
+            else:
+                return count
         else:
             return count
     return count
@@ -84,26 +91,32 @@ async def counter_max_days(data, daily_scores, message, activities, output=''):
     if negative_dict is None:
         negative_dict = {}
     column = data['Дела за день']
-    negative_dict = {current_word: counter_negative(current_word=current_word, column=column) for current_word in
-                     daily_scores}
-    positive_dict = {current_word: counter_positive(current_word=current_word, column=column) for current_word in
-                     activities}
-    negative_output = '\n'.join(
-        ['{} : {}'.format(key, value) for key, value in negative_dict.items() if value not in [0, 1]])
-    positive_output = '\n'.join(
-        ['{} : {}'.format(key, value) for key, value in positive_dict.items() if value not in [0, 1]])
-    if positive_output:
-        output += f'Поздравляю! Вы соблюдаете эти дела уже столько дней:\n{positive_output}'
-    if negative_output:
-        if output != '': output += '\n\n'
-        output += f'Вы не делали эти дела уже столько дней:\n{negative_output}\n\nМожет стоит дать им еще один шанс?'
-    sent_message = await message.answer(output)
-    await message.bot.pin_chat_message(message.chat.id, sent_message.message_id)
+    if column.any():
+        negative_dict = {current_word: counter_negative(current_word=current_word, column=column) for current_word in
+                         daily_scores}
+        positive_dict = {current_word: counter_positive(current_word=current_word, column=column) for current_word in
+                         activities}
+        negative_output = '\n'.join(
+            ['{} : {}'.format(key, value) for key, value in negative_dict.items() if value not in [0, 1]])
+        positive_output = '\n'.join(
+            ['{} : {}'.format(key, value) for key, value in positive_dict.items() if value not in [0, 1]])
+        if positive_output:
+            output += f'Поздравляю! Вы соблюдаете эти дела уже столько дней:\n{positive_output}'
+        if negative_output:
+            if output != '': output += '\n\n'
+            output += f'Вы не делали эти дела уже столько дней:\n{negative_output}\n\nМожет стоит дать им еще один шанс?'
+        if output:
+            sent_message = await message.answer(output)
+            await message.bot.pin_chat_message(message.chat.id, sent_message.message_id)
+    else:
+        await message.answer('Поздравляю! дневник заполнен')
 
 
-def generate_keyboard(buttons: list, last_button = None):
+def generate_keyboard(buttons: list, last_button = None, first_button = None):
     if last_button != None:
         kb = [[types.KeyboardButton(text=button) for button in buttons], [types.KeyboardButton(text=last_button)]]
+    elif first_button != None:
+        kb = [[types.KeyboardButton(text=first_button)], [types.KeyboardButton(text=button) for button in buttons]]
     else:
         kb = [[types.KeyboardButton(text=button) for button in buttons]]
     keyboard = types.ReplyKeyboardMarkup(
