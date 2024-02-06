@@ -1,16 +1,14 @@
 import re
 from datetime import timedelta
-import xlsxwriter
 import pandas as pd
 from aiogram import types
 
 
 async def add_day_to_excel(date, activities: list, total_sleep: float, deep_sleep: float, personal_rate: float,
-                           my_steps: int,
-                           user_id: int,
+                           mysteps: int,
                            daily_scores: list,
-                           user_message: str, message):
-    path = str(user_id) + '_Diary.xlsx'
+                           user_message: str, message, excel_chosen_tasks=None):
+    path = str(message.from_user.id) + '_Diary.xlsx'
     try:
         data = pd.read_excel(path)
     except FileNotFoundError:
@@ -20,9 +18,11 @@ async def add_day_to_excel(date, activities: list, total_sleep: float, deep_slee
     yesterday = date - timedelta(days=1)
     data.loc[last_row, 'Дата'] = yesterday.strftime("%d.%m.%Y")
     data.loc[last_row, 'Дела за день'] = ", ".join(activities)
-    data.loc[last_row, 'Шаги'] = my_steps
+    data.loc[last_row, 'Шаги'] = mysteps
     data.loc[last_row, 'Total sleep'] = total_sleep
     data.loc[last_row, 'Deep sleep'] = deep_sleep
+    if excel_chosen_tasks:
+        user_message = ', '.join(excel_chosen_tasks) + ', ' + user_message
     data.loc[last_row, 'О дне'] = user_message
     data.loc[last_row, 'My rate'] = personal_rate
     writer = pd.ExcelWriter(path, engine='xlsxwriter')

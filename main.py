@@ -81,11 +81,10 @@ async def start(message: Message, state: FSMContext) -> None:
         else:
             keyboard = generate_keyboard(['Настройки', 'Заполнить Дневник'])
         await message.answer('Главное меню', reply_markup=keyboard)
-        user_data = await state.get_data()
-        if 'scheduler_arguments' in user_data:
+        if 'scheduler_arguments' in data:
             # загрузка в scheduler заданий из database
-            for key in list(user_data['scheduler_arguments'].keys()):
-                values = user_data['scheduler_arguments'][key]
+            for key in list(data['scheduler_arguments'].keys()):
+                values = data['scheduler_arguments'][key]
                 values_copy = values.copy()
                 values_copy['args'] = (state, key)
                 if 'date' in values_copy:
@@ -94,16 +93,16 @@ async def start(message: Message, state: FSMContext) -> None:
                     values_copy['run_date'] = datetime.datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
                     current_date = datetime.datetime.now()
                     if current_date > (values_copy['run_date'] + timedelta(minutes=1)):
-                        del user_data['scheduler_arguments'][key]
+                        del data['scheduler_arguments'][key]
                         continue
                 unique_id = generate_unique_id_from_args(values_copy)
                 if not any(job.id == unique_id for job in scheduler.get_jobs()):
                     values_copy['id'] = unique_id
                     scheduler.add_job(executing_scheduler_job, **values_copy)
 
-            if len(user_data['scheduler_arguments']) == 0:
-                del user_data['scheduler_arguments']
-                await state.set_data(user_data)
+            if len(data['scheduler_arguments']) == 0:
+                del data['scheduler_arguments']
+                await state.set_data(data)
                 await edit_database(scheduler_arguments={})
     else:
         await handle_new_user(message, state)
@@ -508,10 +507,10 @@ async def change_daily_jobs_1(message: Message, state: FSMContext) -> None:
             message_id=call.message.message_id,
             reply_markup=one_time_builder.as_markup()
         )
-        if 'message_to_edit' in user_data:
+        if 'messages_to_edit' in user_data:
             messages_to_edit = user_data['messages_to_edit']
-            await bot.delete_message(message.chat.id, messages_to_edit[1])
-            await bot.edit_message_text('Добавьте список дел', message.chat.id, messages_to_edit[0])
+            await bot.delete_message(message.chat.id, messages_to_edit['message'])
+            await bot.edit_message_text('Добавьте список дел', message.chat.id, messages_to_edit['keyboard'])
     await state.update_data(daily_scores=daily_scores)
     await edit_database(daily_scores=daily_scores)
     await message.answer('Отлично, ваш список ежедневных дел обновлен!')
@@ -547,6 +546,7 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
             await state.update_data(activities=chosen_tasks)
             await state.update_data(chosen_tasks=[])
             one_time_jobs = user_states_data['one_time_jobs']
+            messages_to_edit = user_states_data['messages_to_edit']
             one_time_builder = InlineKeyboardBuilder()
             for index, job in enumerate(one_time_jobs):
                 one_time_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
@@ -558,7 +558,8 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
             new_ot_builder.adjust(2, 1)
             one_time_builder.attach(new_ot_builder)
             await call.message.answer('Отметьте разовые дела', reply_markup=one_time_builder.as_markup())
-            await call.message.answer('Если вы ничего не выполняли можете "Отправить" ничего не выбирая')
+            usr_message = await call.message.answer('Если вы ничего не выполняли можете "Отправить" ничего не выбирая')
+            messages_to_edit['message'] = usr_message.message_id
             await state.set_state(ClientState.one_time_jobs_proceed)
         except KeyError:
             await call.message.answer("Сколько сделал шагов?")
@@ -592,8 +593,8 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
             del user_states_data['daily_scores']
             await state.set_data(user_states_data)
             messages_to_edit = user_states_data['messages_to_edit']
-            await bot.delete_message(call.message.chat.id, messages_to_edit[1])
-            await bot.edit_message_text('Добавьте список дел', call.message.chat.id, messages_to_edit[0])
+            await bot.delete_message(call.message.chat.id, messages_to_edit['message'])
+            await bot.edit_message_text('Добавьте список дел', call.message.chat.id, messages_to_edit['keyboard'])
             await bot.edit_message_reply_markup(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
@@ -650,21 +651,18 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
     one_time_jobs = user_states_data['one_time_jobs']
     if data == 'Отправить':
         await call.answer()
+        if len(chosen_tasks) != 0:
+            await state.update_data(excel_chosen_tasks=chosen_tasks)
+            user_states_data['excel_chosen_tasks']=chosen_tasks
         for iter in chosen_tasks:
             one_time_jobs.remove(iter)
         if len(one_time_jobs) == 0:
-            new_ot_builder = InlineKeyboardBuilder()
-            new_ot_builder.button(text="💼Добавить 💼", callback_data="Добавить")
-            del user_states_data['daily_scores']
-            await state.set_data(user_states_data)
             messages_to_edit = user_states_data['messages_to_edit']
-            await bot.delete_message(call.message.chat.id, messages_to_edit[1])
-            await bot.edit_message_text('Добавьте список дел', call.message.chat.id, messages_to_edit[0])
-            await bot.edit_message_reply_markup(
+            await bot.delete_message(call.message.chat.id, messages_to_edit['message'])
+            await bot.delete_message(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                reply_markup=new_ot_builder.as_markup()
-            )
+                )
             del user_states_data['one_time_jobs']
             await state.set_data(user_states_data)
         # elif len(chosen_tasks) == 0:
@@ -687,9 +685,9 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
             )
             await state.update_data(one_time_jobs=one_time_jobs)
         await edit_database(one_time_jobs=one_time_jobs)
-
-        await state.update_data(chosen_tasks=[])
-
+        user_states_data = await state.get_data()
+        del user_states_data['messages_to_edit']
+        await state.set_data(user_states_data)
         await call.message.answer("Сколько сделал шагов?")
         await state.set_state(ClientState.steps)
     elif data == 'Удалить':
@@ -767,9 +765,12 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
 
 @dp.message(ClientState.steps)
 async def process_steps(message: Message, state: FSMContext) -> None:
-    await state.update_data(mysteps=message.text)
-    await message.answer('Сколько всего часов спал ?')
-    await state.set_state(ClientState.total_sleep)
+    try:
+        await state.update_data(mysteps=int(message.text))
+        await message.answer('Сколько всего часов спал ?')
+        await state.set_state(ClientState.total_sleep)
+    except ValueError:
+        await message.answer(f'"{message.text}" должно быть числом')
 
 
 @dp.message(ClientState.total_sleep)
@@ -826,24 +827,19 @@ async def process_about_day(message: Message, state: FSMContext) -> None:
 
 @dp.message(ClientState.personal_rate)
 async def process_personal_rate(message: Message, state: FSMContext) -> None:
-    personal_rate = int(message.text)
-    if personal_rate <= 10 and personal_rate >= 0:
-        user_states_data = await state.get_data()
-        daily_scores = user_states_data['daily_scores']
-        date = datetime.datetime.now()
-        activities = user_states_data['activities']
-        user_message = user_states_data['user_message']
-        total_sleep = float(user_states_data['total_sleep'])
-        deep_sleep = float(user_states_data['deep_sleep'])
-        my_steps = int(user_states_data['mysteps'])
-        user_id = message.from_user.id
-        await add_day_to_excel(date, activities, total_sleep, deep_sleep, personal_rate, my_steps, user_id,
-                               daily_scores,
-                               user_message, message)
-        await start(message, state)
-    else:
+    try:
+        personal_rate = int(message.text)
+        if personal_rate <= 10 and personal_rate >= 0:
+            user_states_data = await state.get_data()
+            del user_states_data['chosen_tasks']
+            await state.set_data(user_states_data)
+            date = datetime.datetime.now()
+            await add_day_to_excel(date=date, personal_rate=personal_rate, message=message, **user_states_data)
+            await start(message, state)
+        else:
+            await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
+    except ValueError:
         await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
-
 
 
 async def existing_user(message, state: FSMContext):
@@ -875,7 +871,7 @@ async def existing_user(message, state: FSMContext):
         #     'После этого нажмите кнопку "Отправить"', reply_markup=keyboard)
         sent_message = await message.answer(
             'После этого нажмите кнопку "Отправить"')
-        messages_to_edit = [keyboard_message.message_id, sent_message.message_id]
+        messages_to_edit = {'keyboard': keyboard_message.message_id, 'message': sent_message.message_id}
         await state.update_data(messages_to_edit=messages_to_edit)
 
         await state.set_state(ClientState.greet)
