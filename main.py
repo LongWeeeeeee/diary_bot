@@ -74,7 +74,6 @@ async def start(message: Message, state: FSMContext) -> None:
             data['one_time_jobs'] = one_time_jobs
         if len(scheduler_arguments) != 0:
             data['scheduler_arguments'] = scheduler_arguments
-        data['chosen_tasks'] = []
         await state.update_data(**data)
         path = str(message.from_user.id) + '_Diary.xlsx'
         if os.path.exists(path):
@@ -538,7 +537,10 @@ def keyboard_builder(input: list, grid=1):
 async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
     data = call.data
     user_states_data = await state.get_data()
-    chosen_tasks = user_states_data['chosen_tasks']
+    try:
+        chosen_tasks = user_states_data['chosen_tasks']
+    except:
+        chosen_tasks = []
     if data == 'Отправить':
         await call.answer()
         try:
@@ -620,7 +622,6 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
                 builder.button(text=f"{job} ✅️️", callback_data=f"{index}")
             else:
                 builder.button(text=f"{job} ✔️", callback_data=f"{index}")
-
         builder.adjust(2, 2)
         new_builder = InlineKeyboardBuilder()
         new_builder.button(text="❌Удалить❌", callback_data="Удалить")
@@ -642,7 +643,10 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
 async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None:
     data = call.data
     user_states_data = await state.get_data()
-    chosen_tasks = user_states_data['chosen_tasks']
+    try:
+        chosen_tasks = user_states_data['chosen_tasks']
+    except:
+        chosen_tasks = []
     one_time_jobs = user_states_data['one_time_jobs']
     if data == 'Отправить':
         await call.answer()
@@ -844,19 +848,19 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
 
 async def existing_user(message, state: FSMContext):
     user_data = await state.get_data()
-    tasks = []
     if 'daily_scores' in user_data:
         daily_scores = user_data['daily_scores']
         builder = InlineKeyboardBuilder()
-        for index, job in enumerate(daily_scores):
-            # word = ''
-            # for i in job.split(' '):
-            #     if len(word) > 12:
-            #         word += '/n'
-            #         word += i
-            #     else:
-            #         word += i
-            builder.button(text=f"{job} ✔️", callback_data=f"{index}")
+        if 'chosen_tasks' in user_data:
+            chosen_tasks = user_data['chosen_tasks']
+            for index, job in enumerate(daily_scores):
+                if job in chosen_tasks:
+                    builder.button(text=f"{job} ✅️️", callback_data=f"{index}")
+                else:
+                    builder.button(text=f"{job} ✔️", callback_data=f"{index}")
+        else:
+            for index, job in enumerate(daily_scores):
+                builder.button(text=f"{job} ✔️", callback_data=f"{index}")
         builder.adjust(2, 2)
         new_builder = InlineKeyboardBuilder()
         new_builder.button(text="❌Удалить❌", callback_data="Удалить")
