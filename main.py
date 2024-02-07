@@ -135,7 +135,7 @@ async def diary_output(message: Message, state: FSMContext) -> None:
     await state.set_state(ClientState.greet)
 
 
-@dp.message(lambda message: message.text.lower() == 'дела в определенную дату', ClientState.settings)
+@dp.message(lambda message: message.text is not None and message.text.lower() == 'дела в определенную дату', ClientState.settings)
 async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
     locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
     data = await state.get_data()
@@ -414,7 +414,7 @@ async def executing_scheduler_job(state, out_message):
         await state.update_data(one_time_jobs=job)
         await edit_database(one_time_jobs=job)
 
-@dp.message(lambda message: message.text.lower() == 'добавить разовые дела', ClientState.settings)
+@dp.message(lambda message: message.text is not None and message.text.lower() == 'добавить разовые дела', ClientState.settings)
 async def change_one_time_jobs(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     if 'one_time_jobs' in user_data:
@@ -464,7 +464,7 @@ async def change_one_time_jobs_2(message: Message, state: FSMContext) -> None:
     await state.update_data(one_time_jobs=one_time_jobs)
     await start(message, state)
 
-@dp.message(lambda message: message.text.lower() == 'скачать дневник')
+@dp.message(lambda message: message.text is not None and message.text.lower() == 'скачать дневник')
 async def download_diary(message: Message) -> None:
     try:
         await message.answer_document(
