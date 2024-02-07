@@ -655,34 +655,34 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
         if len(chosen_tasks) != 0:
             await state.update_data(excel_chosen_tasks=chosen_tasks)
             user_states_data['excel_chosen_tasks']=chosen_tasks
-        for iter in chosen_tasks:
-            one_time_jobs.remove(iter)
-        if len(one_time_jobs) == 0:
-            messages_to_edit = user_states_data['messages_to_edit']
-            await bot.delete_message(call.message.chat.id, messages_to_edit['message'])
-            await bot.delete_message(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
+            for iter in chosen_tasks:
+                one_time_jobs.remove(iter)
+            if len(one_time_jobs) == 0:
+                messages_to_edit = user_states_data['messages_to_edit']
+                await bot.delete_message(call.message.chat.id, messages_to_edit['message'])
+                await bot.delete_message(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    )
+                del user_states_data['one_time_jobs']
+                await state.set_data(user_states_data)
+            else:
+                one_time_builder = InlineKeyboardBuilder()
+                for index, job in enumerate(one_time_jobs):
+                    one_time_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
+                one_time_builder.adjust(1, 1)
+                new_ot_builder = InlineKeyboardBuilder()
+                new_ot_builder.button(text="❌Удалить❌", callback_data="Удалить")
+                new_ot_builder.button(text="💼Добавить 💼", callback_data="Добавить")
+                new_ot_builder.button(text="🚀Отправить 🚀", callback_data="Отправить")
+                new_ot_builder.adjust(2, 1)
+                one_time_builder.attach(new_ot_builder)
+                await bot.edit_message_reply_markup(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=one_time_builder.as_markup()
                 )
-            del user_states_data['one_time_jobs']
-            await state.set_data(user_states_data)
-        else:
-            one_time_builder = InlineKeyboardBuilder()
-            for index, job in enumerate(one_time_jobs):
-                one_time_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
-            one_time_builder.adjust(1, 1)
-            new_ot_builder = InlineKeyboardBuilder()
-            new_ot_builder.button(text="❌Удалить❌", callback_data="Удалить")
-            new_ot_builder.button(text="💼Добавить 💼", callback_data="Добавить")
-            new_ot_builder.button(text="🚀Отправить 🚀", callback_data="Отправить")
-            new_ot_builder.adjust(2, 1)
-            one_time_builder.attach(new_ot_builder)
-            await bot.edit_message_reply_markup(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                reply_markup=one_time_builder.as_markup()
-            )
-            await state.update_data(one_time_jobs=one_time_jobs)
+                await state.update_data(one_time_jobs=one_time_jobs)
         await edit_database(one_time_jobs=one_time_jobs)
         user_states_data = await state.get_data()
         del user_states_data['messages_to_edit']
