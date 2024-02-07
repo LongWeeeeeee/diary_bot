@@ -832,6 +832,7 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
         if personal_rate <= 10 and personal_rate >= 0:
             user_states_data = await state.get_data()
             del user_states_data['chosen_tasks']
+            del user_states_data['one_time_jobs']
             await state.set_data(user_states_data)
             date = datetime.datetime.now()
             await add_day_to_excel(date=date, personal_rate=personal_rate, message=message, **user_states_data)

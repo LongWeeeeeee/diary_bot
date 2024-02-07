@@ -22,7 +22,7 @@ async def add_day_to_excel(date, activities: list, total_sleep: float, deep_slee
     data.loc[last_row, 'Total sleep'] = total_sleep
     data.loc[last_row, 'Deep sleep'] = deep_sleep
     if excel_chosen_tasks:
-        user_message = ', '.join(excel_chosen_tasks) + ', ' + user_message
+        user_message = f"Выполнил разовые дела: {', '.join(excel_chosen_tasks)}, {user_message}"
     data.loc[last_row, 'О дне'] = user_message
     data.loc[last_row, 'My rate'] = personal_rate
     writer = pd.ExcelWriter(path, engine='xlsxwriter')
