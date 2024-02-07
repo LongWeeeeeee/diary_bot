@@ -19,7 +19,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import keys
 from sqlite import database_start, create_profile, edit_database
-from functions import generate_keyboard, diary_out, add_day_to_excel, normalized, day_to_prefix
+from test_functions import generate_keyboard, diary_out, add_day_to_excel, normalized, day_to_prefix
 
 bot = Bot(token=keys.Token)
 dp = Dispatcher()
@@ -64,7 +64,7 @@ async def start(message: Message, state: FSMContext) -> None:
     answer = await create_profile(user_id=message.from_user.id)
     if answer is not None:
         data = {}
-        daily_scores, one_time_jobs, scheduler_arguments = json.loads(answer[1]), json.loads(answer[2]), json.loads(answer[3])
+        daily_scores, one_time_jobs, scheduler_arguments, personal_records = json.loads(answer[1]), json.loads(answer[2]), json.loads(answer[3]), json.loads(answer[4])
         if len(daily_scores) != 0:
             data['daily_scores'] = daily_scores
         else:
@@ -74,6 +74,7 @@ async def start(message: Message, state: FSMContext) -> None:
             data['one_time_jobs'] = one_time_jobs
         if len(scheduler_arguments) != 0:
             data['scheduler_arguments'] = scheduler_arguments
+        data['personal_records'] = personal_records
         await state.update_data(**data)
         path = str(message.from_user.id) + '_Diary.xlsx'
         if os.path.exists(path):
@@ -81,41 +82,52 @@ async def start(message: Message, state: FSMContext) -> None:
         else:
             keyboard = generate_keyboard(['Настройки', 'Заполнить Дневник'])
         await message.answer('Главное меню', reply_markup=keyboard)
-        if 'scheduler_arguments' in data:
-            # загрузка в scheduler заданий из database
-            for key in list(data['scheduler_arguments'].keys()):
-                values = data['scheduler_arguments'][key]
-                values_copy = values.copy()
-                values_copy['args'] = (state, key)
-                if 'date' in values_copy:
-                    values_copy['date'] = datetime.datetime.strptime(values['date'], '%Y-%m-%d')
-                elif 'run_date' in values_copy:
-                    values_copy['run_date'] = datetime.datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
-                    current_date = datetime.datetime.now()
-                    if current_date > (values_copy['run_date'] + timedelta(minutes=1)):
-                        del data['scheduler_arguments'][key]
-                        continue
-                unique_id = generate_unique_id_from_args(values_copy)
-                if not any(job.id == unique_id for job in scheduler.get_jobs()):
-                    values_copy['id'] = unique_id
-                    scheduler.add_job(executing_scheduler_job, **values_copy)
-
-            if len(data['scheduler_arguments']) == 0:
-                del data['scheduler_arguments']
-                await state.set_data(data)
-                await edit_database(scheduler_arguments={})
+        #загрузка данных в scheduler из scheduler_arguments from database
+        await scheduler_in(data, state)
     else:
         await handle_new_user(message, state)
+async def scheduler_in(data, state):
+    if 'scheduler_arguments' in data:
+        # загрузка в scheduler заданий из database
+        for key in list(data['scheduler_arguments'].keys()):
+            values = data['scheduler_arguments'][key]
+            values_copy = values.copy()
+            values_copy['args'] = (state, key)
+            if 'date' in values_copy:
+                values_copy['date'] = datetime.datetime.strptime(values['date'], '%Y-%m-%d')
+            elif 'run_date' in values_copy:
+                values_copy['run_date'] = datetime.datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
+                current_date = datetime.datetime.now()
+                if current_date > (values_copy['run_date'] + timedelta(minutes=1)):
+                    del data['scheduler_arguments'][key]
+                    continue
+            unique_id = generate_unique_id_from_args(values_copy)
+            if not any(job.id == unique_id for job in scheduler.get_jobs()):
+                values_copy['id'] = unique_id
+                scheduler.add_job(executing_scheduler_job, **values_copy)
+
+        if len(data['scheduler_arguments']) == 0:
+            del data['scheduler_arguments']
+            await state.set_data(data)
+            await edit_database(scheduler_arguments={})
 
 @dp.message(lambda message: message.text is not None and message.text.lower() == 'настройки')
 async def settings(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     if 'one_time_jobs' not in user_data:
-        keyboard = generate_keyboard(['Добавить Разовые Дела', 'Дела в определенную дату'],
-                                     last_button="В Главное Меню")
+        if not len(user_data['personal_records']):
+            keyboard = generate_keyboard(['Добавить Разовые Дела', 'Дела в определенную дату'],
+                                         last_button="В Главное Меню")
+        else:
+            keyboard = generate_keyboard(['Добавить Разовые Дела', 'Дела в определенную дату', 'Мои рекорды'],
+                                         last_button="В Главное Меню")
     else:
-        keyboard = generate_keyboard(['Дела в определенную дату'],
-                                     last_button="В Главное Меню")
+        if not len(user_data['personal_records']):
+            keyboard = generate_keyboard(['Дела в определенную дату'],
+                                         last_button="В Главное Меню")
+        else:
+            keyboard = generate_keyboard(['Дела в определенную дату', 'Мои рекорды'],
+                                         last_button="В Главное Меню")
     await message.answer(text='Ваши Настройки', reply_markup=keyboard)
     await state.set_state(ClientState.settings)
 
@@ -134,6 +146,13 @@ async def diary_output(message: Message, state: FSMContext) -> None:
     await diary_out(message)
     await state.set_state(ClientState.greet)
 
+
+@dp.message(lambda message: message.text is not None and message.text.lower() == 'мои рекорды', ClientState.settings)
+async def my_records(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    personal_records = data['personal_records']
+    output = [f'{key} : {value}' for key, value in personal_records.items()]
+    await message.answer('Ваши рекорды:\n' + '\n'.join(output))
 
 @dp.message(lambda message: message.text is not None and message.text.lower() == 'дела в определенную дату', ClientState.settings)
 async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
@@ -508,10 +527,11 @@ async def change_daily_jobs_1(message: Message, state: FSMContext) -> None:
             message_id=call.message.message_id,
             reply_markup=one_time_builder.as_markup()
         )
-        if 'messages_to_edit' in user_data:
-            messages_to_edit = user_data['messages_to_edit']
-            await bot.delete_message(message.chat.id, messages_to_edit['message'])
-            await bot.edit_message_text('Добавьте список дел', message.chat.id, messages_to_edit['keyboard'])
+        if len(daily_scores) == 0:
+            if 'messages_to_edit' in user_data:
+                messages_to_edit = user_data['messages_to_edit']
+                await bot.delete_message(message.chat.id, messages_to_edit['message'])
+                await bot.edit_message_text('Добавьте список дел', message.chat.id, messages_to_edit['keyboard'])
     await state.update_data(daily_scores=daily_scores)
     await edit_database(daily_scores=daily_scores)
     await message.answer('Отлично, ваш список ежедневных дел обновлен!')
@@ -765,7 +785,7 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
 @dp.message(ClientState.steps)
 async def process_steps(message: Message, state: FSMContext) -> None:
     try:
-        await state.update_data(mysteps=int(message.text))
+        await state.update_data(my_steps=int(message.text))
         await message.answer('Сколько всего часов спал ?')
         await state.set_state(ClientState.total_sleep)
     except ValueError:
@@ -828,17 +848,23 @@ async def process_about_day(message: Message, state: FSMContext) -> None:
 async def process_personal_rate(message: Message, state: FSMContext) -> None:
     try:
         personal_rate = int(message.text)
-        if personal_rate <= 10 and personal_rate >= 0:
+        if 0 <= personal_rate <= 10:
             user_states_data = await state.get_data()
-            del user_states_data['chosen_tasks']
-            del user_states_data['one_time_jobs']
-            del user_states_data['scheduler_arguments']
-            await state.set_data(user_states_data)
-            date = datetime.datetime.now()
-            await add_day_to_excel(date=date, personal_rate=personal_rate, message=message, **user_states_data)
+            data = {
+                'daily_scores': user_states_data['daily_scores'],
+                'date': datetime.datetime.now(),
+                'activities': user_states_data['activities'],
+                'user_message': user_states_data['user_message'],
+                'total_sleep': user_states_data['total_sleep'],
+                'deep_sleep': user_states_data['deep_sleep'],
+                'my_steps': user_states_data['my_steps'],
+                'personal_records': user_states_data['personal_records']
+            }
+            personal_records = await add_day_to_excel(message=message, personal_rate=personal_rate, **data)
+            await edit_database(personal_records=personal_records)
             await start(message, state)
         else:
-            await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
+            raise ValueError
     except ValueError:
         await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
 

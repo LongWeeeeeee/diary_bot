@@ -5,9 +5,9 @@ from aiogram import types
 
 
 async def add_day_to_excel(date, activities: list, total_sleep: float, deep_sleep: float, personal_rate: float,
-                           mysteps: int,
+                           my_steps: int,
                            daily_scores: list,
-                           user_message: str, message, excel_chosen_tasks=None):
+                           user_message: str, message, excel_chosen_tasks=None, personal_records=dict):
     path = str(message.from_user.id) + '_Diary.xlsx'
     try:
         data = pd.read_excel(path)
@@ -18,7 +18,7 @@ async def add_day_to_excel(date, activities: list, total_sleep: float, deep_slee
     yesterday = date - timedelta(days=1)
     data.loc[last_row, 'Дата'] = yesterday.strftime("%d.%m.%Y")
     data.loc[last_row, 'Дела за день'] = ", ".join(activities)
-    data.loc[last_row, 'Шаги'] = mysteps
+    data.loc[last_row, 'Шаги'] = my_steps
     data.loc[last_row, 'Total sleep'] = total_sleep
     data.loc[last_row, 'Deep sleep'] = deep_sleep
     if excel_chosen_tasks:
@@ -45,7 +45,8 @@ async def add_day_to_excel(date, activities: list, total_sleep: float, deep_slee
     if not len(activities):
         await message.answer('Поздравляю! дневник заполнен')
     else:
-        await counter_max_days(data=data, daily_scores=daily_scores, message=message, activities=activities)
+        personal_records = await counter_max_days(data=data, daily_scores=daily_scores, message=message, activities=activities, personal_records=personal_records)
+        return personal_records
 
 
 def counter_negative(column, current_word, count=0):
@@ -86,7 +87,7 @@ def counter_positive(current_word, column, count=0):
     return count
 
 
-async def counter_max_days(data, daily_scores, message, activities, output=''):
+async def counter_max_days(data, daily_scores, message, activities, personal_records, output=''):
     negative_dict, positive_dict = {}, {}
     if negative_dict is None:
         negative_dict = {}
@@ -98,8 +99,15 @@ async def counter_max_days(data, daily_scores, message, activities, output=''):
                          activities}
         negative_output = '\n'.join(
             ['{} : {}'.format(key, value) for key, value in negative_dict.items() if value not in [0, 1]])
-        positive_output = '\n'.join(
-            ['{} : {}'.format(key, value) for key, value in positive_dict.items() if value not in [0, 1]])
+        positive_output = []
+        for key, value in positive_dict.items():
+            if key in personal_records:
+                if personal_records[key] < value: personal_records[key] = value
+            else:
+                personal_records[key] = value
+            if value not in [0, 1]:
+                positive_output.append(f'{key} : {value}')
+        positive_output = '\n'.join(positive_output)
         if positive_output:
             output += f'Поздравляю! Вы соблюдаете эти дела уже столько дней:\n{positive_output}'
         if negative_output:
@@ -108,6 +116,7 @@ async def counter_max_days(data, daily_scores, message, activities, output=''):
         if output:
             sent_message = await message.answer(output)
             await message.bot.pin_chat_message(message.chat.id, sent_message.message_id)
+            return personal_records
     else:
         await message.answer('Поздравляю! дневник заполнен')
 

@@ -9,7 +9,7 @@ async def database_start():
     cur = db.cursor()
 
     cur.execute(
-        "CREATE TABLE IF NOT EXISTS profile (user_id TEXT PRIMARY KEY, daily_scores TEXT, one_time_jobs TEXT, scheduler_arguments TEXT)")
+        "CREATE TABLE IF NOT EXISTS profile (user_id TEXT PRIMARY KEY, daily_scores TEXT, one_time_jobs TEXT, scheduler_arguments TEXT, personal_records TEXT)")
 
     db.commit()
 
@@ -17,7 +17,7 @@ async def database_start():
 async def create_profile(user_id):
     user = cur.execute("SELECT * FROM profile WHERE user_id = ?", (user_id,)).fetchone()
     if not user:
-        cur.execute("INSERT INTO profile VALUES(?,?,?,?)", (user_id, '[]', '[]', '{}'))
+        cur.execute("INSERT INTO profile VALUES(?,?,?,?,?)", (user_id, '[]', '[]', '{}', '{}'))
         db.commit()
     else:
         return cur.execute("SELECT * FROM profile WHERE user_id = ?", (user_id,)).fetchone()
