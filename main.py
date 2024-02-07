@@ -119,7 +119,8 @@ async def settings(message: Message, state: FSMContext) -> None:
     await message.answer(text='Ваши Настройки', reply_markup=keyboard)
     await state.set_state(ClientState.settings)
 
-@dp.message(lambda message: message.text.lower() == 'заполнить дневник')
+
+@dp.message(lambda message: message.text is not None and message.text.lower() == 'заполнить дневник')
 async def fill_diary(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     if 'daily_scores' in user_data:
@@ -128,7 +129,7 @@ async def fill_diary(message: Message, state: FSMContext) -> None:
         await handle_new_user(message, state)
 
 
-@dp.message(lambda message: message.text.lower() == 'вывести дневник')
+@dp.message(lambda message: message.text is not None and message.text.lower() == 'вывести дневник')
 async def diary_output(message: Message, state: FSMContext) -> None:
     await diary_out(message)
     await state.set_state(ClientState.greet)
