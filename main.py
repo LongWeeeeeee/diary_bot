@@ -107,7 +107,7 @@ async def start(message: Message, state: FSMContext) -> None:
     else:
         await handle_new_user(message, state)
 
-@dp.message(lambda message: message.text.lower() == 'настройки')
+@dp.message(lambda message: message.text is not None and message.text.lower() == 'настройки')
 async def settings(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     if 'one_time_jobs' not in user_data:
@@ -665,9 +665,7 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
                 )
             del user_states_data['one_time_jobs']
             await state.set_data(user_states_data)
-        # elif len(chosen_tasks) == 0:
-
-        elif len(chosen_tasks) != 0:
+        else:
             one_time_builder = InlineKeyboardBuilder()
             for index, job in enumerate(one_time_jobs):
                 one_time_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
