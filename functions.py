@@ -98,7 +98,7 @@ async def counter_max_days(data, daily_scores, message, activities, personal_rec
             ['{} : {}'.format(key, value) for key, value in negative_dict.items() if value not in [0, 1]])
         positive_output = []
         if personal_records is None:
-            personal_records = []
+            personal_records = {}
         for key, value in positive_dict.items():
             if key in personal_records:
                 if personal_records[key] < value: personal_records[key] = value
