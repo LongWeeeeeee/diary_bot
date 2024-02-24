@@ -91,19 +91,21 @@ async def start(message: Message, state: FSMContext) -> None:
 async def settings(message: Message, state: FSMContext = None) -> None:
     user_data = await state.get_data()
     if 'one_time_jobs' not in user_data:
-        if not len(user_data['personal_records']):
-            keyboard = generate_keyboard(['Добавить Разовые Дела', 'Дела в определенную дату'],
-                                         last_button="В Главное Меню")
-        else:
+        if 'personal_records' in user_data:
             keyboard = generate_keyboard(['Добавить Разовые Дела', 'Дела в определенную дату', 'Мои рекорды'],
                                          last_button="В Главное Меню")
-    else:
-        if not len(user_data['personal_records']):
-            keyboard = generate_keyboard(['Дела в определенную дату'],
-                                         last_button="В Главное Меню")
         else:
+            keyboard = generate_keyboard(['Добавить Разовые Дела', 'Дела в определенную дату'],
+                                         last_button="В Главное Меню")
+
+    else:
+        if 'personal_records' in user_data:
             keyboard = generate_keyboard(['Дела в определенную дату', 'Мои рекорды'],
                                          last_button="В Главное Меню")
+        else:
+            keyboard = generate_keyboard(['Дела в определенную дату'],
+                                         last_button="В Главное Меню")
+
     await message.answer(text='Ваши Настройки', reply_markup=keyboard)
     await state.set_state(ClientState.settings)
 
