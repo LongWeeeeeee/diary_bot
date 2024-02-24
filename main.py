@@ -744,8 +744,8 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
             del user_states_data['one_time_jobs']
             await state.set_data(user_states_data)
             messages_to_edit = user_states_data['messages_to_edit']
-            await bot.delete_message(call.message.chat.id, messages_to_edit[1])
-            await bot.edit_message_text('Добавьте список дел', call.message.chat.id, messages_to_edit[0])
+            await bot.delete_message(call.message.chat.id, messages_to_edit['message'])
+            await bot.edit_message_text('Добавьте список дел', call.message.chat.id, messages_to_edit['keyboard'])
             await bot.edit_message_reply_markup(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
