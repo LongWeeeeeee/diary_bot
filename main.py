@@ -859,6 +859,7 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
         personal_rate = int(message.text)
         if 0 <= personal_rate <= 10:
             user_states_data = await state.get_data()
+
             data = {
                 'daily_scores': user_states_data['daily_scores'],
                 'date': datetime.datetime.now(),
@@ -867,8 +868,9 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
                 'total_sleep': user_states_data['total_sleep'],
                 'deep_sleep': user_states_data['deep_sleep'],
                 'my_steps': user_states_data['my_steps'],
-                'personal_records': user_states_data['personal_records']
             }
+            if 'personal_records' in user_states_data:
+                data['personal_records'] = user_states_data['personal_records']
             personal_records = await add_day_to_excel(message=message, personal_rate=personal_rate, **data)
             await edit_database(personal_records=personal_records)
             await start(message, state)
