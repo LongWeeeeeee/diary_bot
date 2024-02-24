@@ -58,8 +58,7 @@ class ClientState(StatesGroup):
     date_jobs_month = State()
 
 
-@dp.message(Command(commands=["start"]))
-@dp.message(lambda message: message.text is not None and message.text.lower() == 'в главное меню')
+@dp.message(lambda message: message.text is not None and message.text.lower() in ['в главное меню', '/start'])
 async def start(message: Message, state: FSMContext) -> None:
     answer = await create_profile(user_id=message.from_user.id)
     if answer is not None:
@@ -86,30 +85,7 @@ async def start(message: Message, state: FSMContext) -> None:
         await scheduler_in(data, state)
     else:
         await handle_new_user(message, state)
-async def scheduler_in(data, state):
-    if 'scheduler_arguments' in data:
-        # загрузка в scheduler заданий из database
-        for key in list(data['scheduler_arguments'].keys()):
-            values = data['scheduler_arguments'][key]
-            values_copy = values.copy()
-            values_copy['args'] = (state, key)
-            if 'date' in values_copy:
-                values_copy['date'] = datetime.datetime.strptime(values['date'], '%Y-%m-%d')
-            elif 'run_date' in values_copy:
-                values_copy['run_date'] = datetime.datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
-                current_date = datetime.datetime.now()
-                if current_date > (values_copy['run_date'] + timedelta(minutes=1)):
-                    del data['scheduler_arguments'][key]
-                    continue
-            unique_id = generate_unique_id_from_args(values_copy)
-            if not any(job.id == unique_id for job in scheduler.get_jobs()):
-                values_copy['id'] = unique_id
-                scheduler.add_job(executing_scheduler_job, **values_copy)
 
-        if len(data['scheduler_arguments']) == 0:
-            del data['scheduler_arguments']
-            await state.set_data(data)
-            await edit_database(scheduler_arguments={})
 
 @dp.message(lambda message: message.text is not None and message.text.lower() == 'настройки')
 async def settings(message: Message, state: FSMContext = None) -> None:
@@ -145,6 +121,43 @@ async def fill_diary(message: Message, state: FSMContext) -> None:
 async def diary_output(message: Message, state: FSMContext) -> None:
     await diary_out(message)
     await state.set_state(ClientState.greet)
+
+
+@dp.message(lambda message: message.text is not None and message.text.lower() == 'скачать дневник')
+async def download_diary(message: Message) -> None:
+    try:
+        await message.answer_document(
+            document=FSInputFile(f'{message.from_user.id}_Diary.xlsx'),
+            disable_content_type_detection=True,
+        )
+    except FileNotFoundError:
+        await message.answer('Сначала заполните данные')
+
+
+async def scheduler_in(data, state):
+    if 'scheduler_arguments' in data:
+        # загрузка в scheduler заданий из database
+        for key in list(data['scheduler_arguments'].keys()):
+            values = data['scheduler_arguments'][key]
+            values_copy = values.copy()
+            values_copy['args'] = (state, key)
+            if 'date' in values_copy:
+                values_copy['date'] = datetime.datetime.strptime(values['date'], '%Y-%m-%d')
+            elif 'run_date' in values_copy:
+                values_copy['run_date'] = datetime.datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
+                current_date = datetime.datetime.now()
+                if current_date > (values_copy['run_date'] + timedelta(minutes=1)):
+                    del data['scheduler_arguments'][key]
+                    continue
+            unique_id = generate_unique_id_from_args(values_copy)
+            if not any(job.id == unique_id for job in scheduler.get_jobs()):
+                values_copy['id'] = unique_id
+                scheduler.add_job(executing_scheduler_job, **values_copy)
+
+        if len(data['scheduler_arguments']) == 0:
+            del data['scheduler_arguments']
+            await state.set_data(data)
+            await edit_database(scheduler_arguments={})
 
 
 @dp.message(lambda message: message.text is not None and message.text.lower() == 'мои рекорды', ClientState.settings)
@@ -483,15 +496,7 @@ async def change_one_time_jobs_2(message: Message, state: FSMContext) -> None:
     await state.update_data(one_time_jobs=one_time_jobs)
     await start(message, state)
 
-@dp.message(lambda message: message.text is not None and message.text.lower() == 'скачать дневник')
-async def download_diary(message: Message) -> None:
-    try:
-        await message.answer_document(
-            document=FSInputFile(f'{message.from_user.id}_Diary.xlsx'),
-            disable_content_type_detection=True,
-        )
-    except FileNotFoundError:
-        await message.answer('Сначала заполните данные')
+
 
 
 @dp.message(ClientState.change_daily_jobs_1)
