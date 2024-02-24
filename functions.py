@@ -7,7 +7,7 @@ from aiogram import types
 async def add_day_to_excel(date, activities: list, total_sleep: float, deep_sleep: float, personal_rate: float,
                            my_steps: int,
                            daily_scores: list,
-                           user_message: str, message, excel_chosen_tasks=None, personal_records=dict):
+                           user_message: str, message, excel_chosen_tasks=None, personal_records=None):
     path = str(message.from_user.id) + '_Diary.xlsx'
     try:
         data = pd.read_excel(path)
@@ -88,9 +88,6 @@ def counter_positive(current_word, column, count=0):
 
 
 async def counter_max_days(data, daily_scores, message, activities, personal_records, output=''):
-    negative_dict, positive_dict = {}, {}
-    if negative_dict is None:
-        negative_dict = {}
     column = data['Дела за день']
     if column.any():
         negative_dict = {current_word: counter_negative(current_word=current_word, column=column) for current_word in
@@ -100,6 +97,8 @@ async def counter_max_days(data, daily_scores, message, activities, personal_rec
         negative_output = '\n'.join(
             ['{} : {}'.format(key, value) for key, value in negative_dict.items() if value not in [0, 1]])
         positive_output = []
+        if personal_records is None:
+            personal_records = []
         for key, value in positive_dict.items():
             if key in personal_records:
                 if personal_records[key] < value: personal_records[key] = value
