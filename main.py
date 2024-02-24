@@ -112,7 +112,7 @@ async def scheduler_in(data, state):
             await edit_database(scheduler_arguments={})
 
 @dp.message(lambda message: message.text is not None and message.text.lower() == 'настройки')
-async def settings(message: Message, state: FSMContext) -> None:
+async def settings(message: Message, state: FSMContext = None) -> None:
     user_data = await state.get_data()
     if 'one_time_jobs' not in user_data:
         if not len(user_data['personal_records']):
