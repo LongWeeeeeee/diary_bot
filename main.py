@@ -73,7 +73,8 @@ async def start(message: Message, state: FSMContext) -> None:
             data['one_time_jobs'] = one_time_jobs
         if len(scheduler_arguments) != 0:
             data['scheduler_arguments'] = scheduler_arguments
-        data['personal_records'] = personal_records
+        if len(personal_records) != 0:
+            data['personal_records'] = personal_records
         await state.update_data(**data)
         path = str(message.from_user.id) + '_Diary.xlsx'
         if os.path.exists(path):
