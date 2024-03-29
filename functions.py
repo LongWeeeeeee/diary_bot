@@ -44,7 +44,8 @@ async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_
     if not len(activities):
         await message.answer('Поздравляю! дневник заполнен')
     else:
-        personal_records = await counter_max_days(data=data, daily_scores=daily_scores, message=message, activities=activities, personal_records=personal_records)
+        personal_records = await counter_max_days(data=data, daily_scores=daily_scores, message=message,
+                                                  activities=activities, personal_records=personal_records)
         return personal_records
 
 
@@ -56,19 +57,20 @@ def counter_negative(column, current_word, count=0):
                 if word == current_word:
                     return count
             count += 1
-        else: return count
+        else:
+            return count
     return count
 
 
 def day_to_prefix(day: str) -> str:
     day_to_prefix_dict = {
-        'воскресенье' : 'каждое',
-        'субботу' : 'каждую',
-        'пятницу' : 'каждую',
-        'четверг' : 'каждый',
-        'среду' : 'каждую',
-        'вторник' : 'каждый',
-        'понедельник' : 'каждый'
+        'воскресенье': 'каждое',
+        'субботу': 'каждую',
+        'пятницу': 'каждую',
+        'четверг': 'каждый',
+        'среду': 'каждую',
+        'вторник': 'каждый',
+        'понедельник': 'каждый'
     }
     return day_to_prefix_dict[day]
 
@@ -119,7 +121,7 @@ async def counter_max_days(data, daily_scores, message, activities, personal_rec
         await message.answer('Поздравляю! дневник заполнен')
 
 
-def generate_keyboard(buttons: list, last_button = None, first_button = None):
+def generate_keyboard(buttons: list, last_button=None, first_button=None):
     if last_button != None:
         kb = [[types.KeyboardButton(text=button) for button in buttons], [types.KeyboardButton(text=last_button)]]
     elif first_button != None:
@@ -133,8 +135,6 @@ def generate_keyboard(buttons: list, last_button = None, first_button = None):
     return keyboard
 
 
-
-
 def normalized(text):
     return re.sub(r',(?=[^\s])', ', ', text).lower().replace('ё', 'е')
 
@@ -145,17 +145,16 @@ async def diary_out(message):
 
     # Отправка заголовка таблицы
     await message.answer(
-        "{} | {} | {} | {} | {} | {} | {} | {}".format("Дата", "Дела за день", "Шаги", "Total sleep", "Deep sleep",
-                                                       "О дне", "My rate", "Total"))
+        "{} | {} | {} | {} | {} | {} | {}".format("Дата", "Дела за день", "Шаги", "Sleep quality",
+                                                  "О дне", "My rate", "Total"))
 
     # Получение последних 7 строк данных
     last_entries = data.tail(7)
 
     # Перебор и отправка последних 7 строк
     for index, row in last_entries.iterrows():
-        message_sheet = "{} | {} | {} | {} | {} | {} | {}".format(row["Дата"], row["Дела за день"], row["Шаги"],
-                                                                       row["Total sleep"], row['Deep sleep'],
-                                                                       row['О дне'], row['My rate'])
+        message_sheet = "{} | {} | {} | {} | {} | {}".format(row["Дата"], row["Дела за день"], row["Шаги"],
+                                                             row["Sleep quality"], row['О дне'], row['My rate'])
 
         # Разделение длинного сообщения на части
         message_parts = [message_sheet[i:i + 4096] for i in range(0, len(message_sheet), 4096)]
