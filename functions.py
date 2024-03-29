@@ -4,7 +4,7 @@ import pandas as pd
 from aiogram import types
 
 
-async def add_day_to_excel(date, activities: list, total_sleep: float, deep_sleep: float, personal_rate: float,
+async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_rate: float,
                            my_steps: int,
                            daily_scores: list,
                            user_message: str, message, excel_chosen_tasks=None, personal_records=None):
@@ -12,15 +12,14 @@ async def add_day_to_excel(date, activities: list, total_sleep: float, deep_slee
     try:
         data = pd.read_excel(path)
     except FileNotFoundError:
-        data = pd.DataFrame(columns=['Дата', 'Дела за день', 'Шаги', 'Total sleep', 'Deep sleep', 'О дне', 'My rate'])
+        data = pd.DataFrame(columns=['Дата', 'Дела за день', 'Шаги', 'Sleep quality', 'О дне', 'My rate'])
 
     last_row = data.index.max() + 1
     yesterday = date - timedelta(days=1)
     data.loc[last_row, 'Дата'] = yesterday.strftime("%d.%m.%Y")
     data.loc[last_row, 'Дела за день'] = ", ".join(activities)
     data.loc[last_row, 'Шаги'] = my_steps
-    data.loc[last_row, 'Total sleep'] = total_sleep
-    data.loc[last_row, 'Deep sleep'] = deep_sleep
+    data.loc[last_row, 'Sleep quality'] = sleep_quality
     if excel_chosen_tasks:
         user_message = f"Выполнил разовые дела: {', '.join(excel_chosen_tasks)}, {user_message}"
     data.loc[last_row, 'О дне'] = user_message
@@ -35,9 +34,9 @@ async def add_day_to_excel(date, activities: list, total_sleep: float, deep_slee
         'text_wrap': True,
         'align': 'center'
     })
-    for row, size in zip(['B', 'F'], [60, 122]):
+    for row, size in zip(['B', 'E'], [60, 122]):
         worksheet.set_column(f'{row}:{row}', size, cell_format)  # Установить ширину столбца A равной 20
-    for row in ['A', 'C', 'D', 'E', 'G']:
+    for row in ['A', 'C', 'D', 'E']:
         # Устанавливаем ширину столбцов
         worksheet.set_column(f'{row}:{row}', 10, cell_format_middle)  # Установить ширину столбца A равной 20
 

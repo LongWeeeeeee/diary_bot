@@ -792,12 +792,18 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
 
 @dp.message(ClientState.steps)
 async def process_steps(message: Message, state: FSMContext) -> None:
-    try:
-        await state.update_data(my_steps=int(message.text))
-        await message.answer('Сколько всего часов спал ?')
+    if message.text not in negative_responses:
+        try:
+            await state.update_data(my_steps=int(message.text))
+            await message.answer('Введите индекс качества сна')
+            await state.set_state(ClientState.total_sleep)
+        except ValueError:
+            await message.answer(f'"{message.text}" должно быть числом')
+    else:
+        await state.update_data(my_steps=0.0)
+        await message.answer('Введите индекс качества сна')
+
         await state.set_state(ClientState.total_sleep)
-    except ValueError:
-        await message.answer(f'"{message.text}" должно быть числом')
 
 
 @dp.message(ClientState.total_sleep)
@@ -805,29 +811,16 @@ async def process_total_sleep(message: Message, state: FSMContext) -> None:
     if message.text not in negative_responses:
         try:
             user_message = float(message.text.replace(',', '.'))
-            await state.update_data(total_sleep=user_message)
-            await message.answer('Сколько из них глубокий сон?')
-            await state.set_state(ClientState.deep_sleep)
+            await state.update_data(sleep_quality=user_message)
+            await message.answer('Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
+            await state.set_state(ClientState.about_day)
         except ValueError:
             await message.answer(f'"{message.text}" должно быть числом')
     else:
-        await state.update_data(total_sleep=0.0)
-        await state.update_data(deep_sleep=0.0)
+        await state.update_data(sleep_quality=0)
         await message.answer(
             'Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
         await state.set_state(ClientState.about_day)
-
-
-@dp.message(ClientState.deep_sleep)
-async def process_deep_sleep(message: Message, state: FSMContext) -> None:
-    try:
-        user_message = float(message.text.replace(',', '.'))
-        await state.update_data(deep_sleep=user_message)
-        await message.answer(
-            'Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
-        await state.set_state(ClientState.about_day)
-    except ValueError:
-        await message.answer(f'"{message.text}" должно быть числом')
 
 
 @dp.message(ClientState.about_day)
@@ -864,8 +857,7 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
                 'date': datetime.datetime.now(),
                 'activities': user_states_data['activities'],
                 'user_message': user_states_data['user_message'],
-                'total_sleep': user_states_data['total_sleep'],
-                'deep_sleep': user_states_data['deep_sleep'],
+                'sleep_quality': user_states_data['sleep_quality'],
                 'my_steps': user_states_data['my_steps'],
             }
             if 'personal_records' in user_states_data:
