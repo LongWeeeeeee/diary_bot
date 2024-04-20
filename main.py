@@ -289,12 +289,16 @@ async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
 
 @dp.message(ClientState.date_jobs_2)
 async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
+    user_state_data = state.get_data()
     user_message = normalized(message.text)
     if user_message == 'в день недели':
-        keyboard = generate_keyboard(
-            ['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу', 'воскресенье'])
-        await message.answer(
-            'В какой день недели?', reply_markup=keyboard)
+        week = ['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу', 'воскресенье']
+        await state.update_data(week=week)
+        builder = keyboard_builder(input=week , columns=2, layers=2, emodji='✔')
+        new_builder = InlineKeyboardBuilder()
+        new_builder.button(text="🚀Отправить 🚀", callback_data="Отправить")
+        builder.attach(new_builder)
+        await message.answer('Выберите дни недели', reply_markup=builder.as_markup())
         await state.set_state(ClientState.date_jobs_week)
     elif user_message == 'число месяца':
         await message.answer(
@@ -313,9 +317,56 @@ async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
         await state.set_state(ClientState.date_jobs_once)
 
 
-async def scheduler_list(message, state, out_message, user_states_data, **kwargs):
+@dp.callback_query(ClientState.date_jobs_week)
+async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None:
+    data = call.data
+    user_states_data = await state.get_data()
+    week = user_states_data['week']
+    try:
+        chosen_tasks = user_states_data['chosen_tasks']
+    except:
+        chosen_tasks = []
+    one_time_jobs = user_states_data['one_time_jobs']
+    if data == 'Отправить':
+        await call.answer()
+        if len(chosen_tasks) != 0:
+            for user_message in chosen_tasks:
+                await date_jobs_week(call=call, user_message=user_message, state=state)
+            await state.update_data(chosen_tasks=[])
+    else:
+        await call.answer()
+        data = int(data)
+        if week[data] in chosen_tasks:
+            chosen_tasks.remove(week[data])
+        else:
+            chosen_tasks.append(week[data])
+        await state.update_data(chosen_tasks=chosen_tasks)
+        builder = InlineKeyboardBuilder()
+        for index, job in enumerate(week):
+            if job in chosen_tasks:
+                builder.button(text=f"{job} ✅️️", callback_data=f"{index}")
+            else:
+                builder.button(text=f"{job} ✔️", callback_data=f"{index}")
+        builder.adjust(2, 2)
+        new_builder = InlineKeyboardBuilder()
+        new_builder.button(text="🚀Отправить 🚀", callback_data="Отправить")
+        builder.attach(new_builder)
+
+        await bot.edit_message_reply_markup(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=builder.as_markup()
+        )
+
+
+
+
+async def scheduler_list(message, state, out_message, user_states_data, call = None, **kwargs):
     # загрузка аргументов в database
-    await message.answer(out_message)
+    if call is not None:
+        await call.answer(out_message)
+    else:
+        await message.answer(out_message)
     try:
         scheduler_arguments = user_states_data['scheduler_arguments']
         scheduler_arguments[out_message] = {**kwargs}
@@ -326,9 +377,9 @@ async def scheduler_list(message, state, out_message, user_states_data, **kwargs
     await start(message, state)
 
 
-@dp.message(ClientState.date_jobs_week)
-async def date_jobs_week(message: Message, state: FSMContext) -> None:
-    user_message = normalized(message.text)
+
+
+async def date_jobs_week(user_message, state, message= None, call=None) -> None:
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
     day_of_week = translate[user_message]
@@ -336,6 +387,8 @@ async def date_jobs_week(message: Message, state: FSMContext) -> None:
     # hours = now.hour
     # minutes = (now + timedelta(minutes=2)).minute
     out_message = f'Я напомню вам : "{new_date_jobs}" {day_to_prefix(user_message)} {user_message}'
+    if message is None:
+        message = call
     await scheduler_list(message, state, out_message, user_states_data, trigger="cron",
                          day_of_week=day_of_week,
                          args=new_date_jobs)
@@ -548,17 +601,17 @@ async def change_daily_jobs_1(message: Message, state: FSMContext) -> None:
     #                      reply_markup=generate_keyboard(['Настройки', 'Заполнить Дневник']))
 
 
-def keyboard_builder(input: list, grid=1):
+def keyboard_builder(input: list, emodji, layers=1, columns = 1 ):
     date_builder = InlineKeyboardBuilder()
     for index, job in enumerate(input):
-        date_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
-    date_builder.adjust(grid, grid)
+        date_builder.button(text=f"{job} {emodji}️", callback_data=f"{index}")
+    date_builder.adjust(layers, columns)
     d_new_builder = InlineKeyboardBuilder()
-    d_new_builder.button(text="❌Удалить❌", callback_data="Удалить")
-    d_new_builder.button(text="💼Добавить 💼", callback_data="Добавить")
-    d_new_builder.adjust(2)
-    date_builder.attach(d_new_builder)
-    return date_builder.as_markup()
+    # d_new_builder.button(text="❌Удалить❌", callback_data="Удалить")
+    # d_new_builder.button(text="💼Добавить 💼", callback_data="Добавить")
+    # d_new_builder.adjust(2)
+    # date_builder.attach(d_new_builder)
+    return date_builder
 
 
 @dp.callback_query(ClientState.greet)
