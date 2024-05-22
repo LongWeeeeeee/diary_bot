@@ -2,7 +2,6 @@ import asyncio
 import datetime
 import hashlib
 import json
-import locale
 import logging
 import os
 from datetime import timedelta
@@ -24,7 +23,6 @@ bot = Bot(token=keys.Token)
 dp = Dispatcher()
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 already_started = False
-locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
 remove_markup = types.ReplyKeyboardRemove()
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 scheduler.start()
@@ -172,7 +170,6 @@ async def my_records(message: Message, state: FSMContext) -> None:
 
 @dp.message(lambda message: message.text is not None and message.text.lower() == 'дела в определенную дату', ClientState.settings)
 async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
-    locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
     data = await state.get_data()
     if 'scheduler_arguments' in data:
         output = data['scheduler_arguments']
