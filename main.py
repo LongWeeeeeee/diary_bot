@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import hashlib
 import json
+# import locale
 import logging
 import os
 from datetime import timedelta
@@ -23,6 +24,7 @@ bot = Bot(token=keys.Token)
 dp = Dispatcher()
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 already_started = False
+# locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
 remove_markup = types.ReplyKeyboardRemove()
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 scheduler.start()
@@ -173,6 +175,7 @@ async def my_records(message: Message, state: FSMContext) -> None:
 
 @dp.message(lambda message: message.text is not None and message.text.lower() == 'дела в определенную дату', ClientState.settings)
 async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
+    # locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
     data = await state.get_data()
     if 'scheduler_arguments' in data:
         output = data['scheduler_arguments']
@@ -573,7 +576,6 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
         await call.answer()
         try:
             await state.update_data(activities=chosen_tasks)
-            await state.update_data(chosen_tasks=[])
             one_time_jobs = user_states_data['one_time_jobs']
             messages_to_edit = user_states_data['messages_to_edit']
             one_time_builder = InlineKeyboardBuilder()
@@ -869,6 +871,7 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
             del user_states_data['previous_diary']
         sent_message = await download_diary(message)
         await edit_database(previous_diary=sent_message.message_id)
+        await state.update_data(chosen_tasks=[])
         await start(message, state)
     else:
         raise ValueError
