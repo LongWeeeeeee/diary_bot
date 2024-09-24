@@ -72,7 +72,7 @@ async def start(message: Message, state: FSMContext) -> None:
             data['one_time_jobs'] = one_time_jobs
         if len(scheduler_arguments) != 0:
             data['scheduler_arguments'] = scheduler_arguments
-        if len(personal_records) != 0:
+        if personal_records is not None and len(personal_records) != 0:
             data['personal_records'] = personal_records
         if len(previous_diary) != 0:
             data['previous_diary'] = previous_diary
@@ -206,15 +206,15 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         data = int(data)
         user_states_data = await state.get_data()
         scheduler_arguments = list(user_states_data['scheduler_arguments'].keys())
-        chosen_tasks = user_states_data['chosen_tasks']
-        if scheduler_arguments[data] in chosen_tasks:
-            chosen_tasks.remove(scheduler_arguments[data])
+        date_chosen_tasks = user_states_data['date_chosen_tasks']
+        if scheduler_arguments[data] in date_chosen_tasks:
+            date_chosen_tasks.remove(scheduler_arguments[data])
         else:
-            chosen_tasks.append(scheduler_arguments[data])
-        await state.update_data(chosen_tasks=chosen_tasks)
+            date_chosen_tasks.append(scheduler_arguments[data])
+        await state.update_data(date_chosen_tasks=date_chosen_tasks)
         a_builder = InlineKeyboardBuilder()
         for index, job in enumerate(scheduler_arguments):
-            if job in chosen_tasks:
+            if job in date_chosen_tasks:
                 job = job.split('Я напомню вам : ')[1].replace('"', '')
                 a_builder.button(text=f"{job} ✅️️", callback_data=f"{index}")
             else:
@@ -236,9 +236,9 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         await call.answer()
         if data == 'Удалить':
             user_states_data = await state.get_data()
-            chosen_tasks = user_states_data['chosen_tasks']
+            date_chosen_tasks = user_states_data['date_chosen_tasks']
             scheduler_arguments = user_states_data['scheduler_arguments']
-            for iter in chosen_tasks:
+            for iter in date_chosen_tasks:
                 for key in list(scheduler_arguments.keys()):
                     values = scheduler_arguments[key]
                     values_copy = values.copy()
@@ -274,7 +274,7 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
 
             await call.answer()
             await state.update_data(scheduler_arguments=scheduler_arguments)
-            await state.update_data(chosen_tasks=[])
+            await state.update_data(date_chosen_tasks=[])
             await edit_database(scheduler_arguments=scheduler_arguments)
         elif data == 'Добавить':
             await call.message.answer('Введите новое дело',)
@@ -343,7 +343,7 @@ async def date_jobs_week(message: Message, state: FSMContext) -> None:
                          day_of_week=day_of_week,
                          args=new_date_jobs)
     if 'call' in user_states_data:
-        await rebuild_keyboard(state)
+        await rebuild_keyboard(state, 'date_chosen_tasks')
 
 
 @dp.message(ClientState.date_jobs_month)
@@ -358,7 +358,7 @@ async def date_jobs_month(message: Message, state: FSMContext) -> None:
     await scheduler_list(message, state, out_message, user_states_data, day=day_of_month, trigger="cron",
                          args=new_date_jobs)
     if 'call' in user_states_data:
-        await rebuild_keyboard(state)
+        await rebuild_keyboard(state, 'date_chosen_tasks')
 
 
 @dp.message(ClientState.date_jobs_year)
@@ -373,7 +373,7 @@ async def date_jobs_year(message: Message, state: FSMContext) -> None:
     await scheduler_list(message, state, out_message, user_states_data, trigger="cron", day=date.day, month=date.month,
                          args=new_date_jobs)
     if 'call' in user_states_data:
-        await rebuild_keyboard(state)
+        await rebuild_keyboard(state, 'date_chosen_tasks')
 
 
 @dp.message(ClientState.date_jobs_once)
@@ -398,14 +398,14 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
                              run_date=date.strftime("%Y-%m-%d %H:%M"),
                              args=new_date_jobs)
         if 'call' in user_states_data:
-            await rebuild_keyboard(state)
+            await rebuild_keyboard(state, 'date_chosen_tasks')
     else:
         await message.answer(f'{message.text} меньше текущей даты')
 
 
-async def rebuild_keyboard(state: FSMContext):
+async def rebuild_keyboard(state: FSMContext, tasks_type):
     user_states_data = await state.get_data()
-    chosen_tasks = user_states_data['chosen_tasks']
+    chosen_tasks = user_states_data[tasks_type]
     call = user_states_data['call']
     scheduler_arguments = user_states_data['scheduler_arguments']
     for iter in chosen_tasks:
@@ -569,13 +569,13 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
     data = call.data
     user_states_data = await state.get_data()
     try:
-        chosen_tasks = user_states_data['chosen_tasks']
+        daily_chosen_tasks = user_states_data['daily_chosen_tasks']
     except:
-        chosen_tasks = []
+        daily_chosen_tasks = []
     if data == 'Отправить':
         await call.answer()
         try:
-            await state.update_data(activities=chosen_tasks)
+            await state.update_data(activities=daily_chosen_tasks)
             one_time_jobs = user_states_data['one_time_jobs']
             messages_to_edit = user_states_data['messages_to_edit']
             one_time_builder = InlineKeyboardBuilder()
@@ -598,7 +598,7 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
     elif data == 'Удалить':
         await call.answer()
         daily_scores = user_states_data['daily_scores']
-        for index in chosen_tasks:
+        for index in daily_chosen_tasks:
             daily_scores.remove(index)
         if len(daily_scores) != 0:
             one_time_builder = InlineKeyboardBuilder()
@@ -643,14 +643,14 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
         await call.answer()
         daily_scores = user_states_data['daily_scores']
         data = int(data)
-        if daily_scores[data] in chosen_tasks:
-            chosen_tasks.remove(daily_scores[data])
+        if daily_scores[data] in daily_chosen_tasks:
+            daily_chosen_tasks.remove(daily_scores[data])
         else:
-            chosen_tasks.append(daily_scores[data])
-        await state.update_data(chosen_tasks=chosen_tasks)
+            daily_chosen_tasks.append(daily_scores[data])
+        await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
         builder = InlineKeyboardBuilder()
         for index, job in enumerate(daily_scores):
-            if job in chosen_tasks:
+            if job in daily_chosen_tasks:
                 builder.button(text=f"{job} ✅️️", callback_data=f"{index}")
             else:
                 builder.button(text=f"{job} ✔️", callback_data=f"{index}")
@@ -676,16 +676,21 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
     data = call.data
     user_states_data = await state.get_data()
     try:
-        chosen_tasks = user_states_data['chosen_tasks']
+        one_time_chosen_tasks = user_states_data['one_time_chosen_tasks']
     except:
-        chosen_tasks = []
+        one_time_chosen_tasks = []
     one_time_jobs = user_states_data['one_time_jobs']
+    try:
+        excel_chosen_tasks = user_states_data['excel_chosen_tasks']
+    except KeyError:
+        excel_chosen_tasks = []
     if data == 'Отправить':
         await call.answer()
-        if len(chosen_tasks) != 0:
-            await state.update_data(excel_chosen_tasks=chosen_tasks)
-            user_states_data['excel_chosen_tasks']=chosen_tasks
-            for iter in chosen_tasks:
+        if len(one_time_chosen_tasks) != 0:
+            excel_chosen_tasks += one_time_chosen_tasks
+            await state.update_data(excel_chosen_tasks=one_time_chosen_tasks)
+            user_states_data['excel_chosen_tasks']=one_time_chosen_tasks
+            for iter in one_time_chosen_tasks:
                 one_time_jobs.remove(iter)
             if len(one_time_jobs) == 0:
                 messages_to_edit = user_states_data['messages_to_edit']
@@ -721,7 +726,7 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
         await state.set_state(ClientState.steps)
     elif data == 'Удалить':
         await call.answer()
-        for index in chosen_tasks:
+        for index in one_time_chosen_tasks:
             one_time_jobs.remove(index)
         if len(one_time_jobs) != 0:
             one_time_builder = InlineKeyboardBuilder()
@@ -763,15 +768,18 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
     else:
         await call.answer()
         one_time_jobs = user_states_data['one_time_jobs']
-        chosen_tasks = user_states_data['chosen_tasks']
+        try:
+            one_time_chosen_tasks = user_states_data['one_time_chosen_tasks']
+        except KeyError:
+            one_time_chosen_tasks = []
         data = int(data)
-        if one_time_jobs[data] in chosen_tasks:
-            chosen_tasks.remove(one_time_jobs[data])
+        if one_time_jobs[data] in one_time_chosen_tasks:
+            one_time_chosen_tasks.remove(one_time_jobs[data])
         else:
-            chosen_tasks.append(one_time_jobs[data])
+            one_time_chosen_tasks.append(one_time_jobs[data])
         a_builder = InlineKeyboardBuilder()
         for index, job in enumerate(one_time_jobs):
-            if job in chosen_tasks:
+            if job in one_time_chosen_tasks:
                 a_builder.button(text=f"{job} ✅️️", callback_data=f"{index}")
             else:
                 a_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
@@ -789,7 +797,7 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
             message_id=call.message.message_id,
             reply_markup=a_builder.as_markup()
         )
-        await state.update_data(chosen_tasks=chosen_tasks)
+        await state.update_data(one_time_chosen_tasks=one_time_chosen_tasks)
 
 
 @dp.message(ClientState.steps)
@@ -871,7 +879,8 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
             del user_states_data['previous_diary']
         sent_message = await download_diary(message)
         await edit_database(previous_diary=sent_message.message_id)
-        await state.update_data(chosen_tasks=[])
+        await state.update_data(daily_chosen_tasks=[])
+        await state.update_data(one_time_chosen_tasks=[])
         await start(message, state)
     else:
         raise ValueError
@@ -884,10 +893,10 @@ async def existing_user(message, state: FSMContext):
     if 'daily_scores' in user_data:
         daily_scores = user_data['daily_scores']
         builder = InlineKeyboardBuilder()
-        if 'chosen_tasks' in user_data:
-            chosen_tasks = user_data['chosen_tasks']
+        if 'daily_chosen_tasks' in user_data:
+            daily_chosen_tasks = user_data['daily_chosen_tasks']
             for index, job in enumerate(daily_scores):
-                if job in chosen_tasks:
+                if job in daily_chosen_tasks:
                     builder.button(text=f"{job} ✅️️", callback_data=f"{index}")
                 else:
                     builder.button(text=f"{job} ✔️", callback_data=f"{index}")
