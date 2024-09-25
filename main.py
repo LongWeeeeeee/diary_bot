@@ -36,6 +36,7 @@ translate = {'понедельник': 'mon', 'вторник': 'tue', 'сред
 
 class ClientState(StatesGroup):
     greet = State()
+    start = State()
     change_daily_jobs_1 = State()
     steps = State()
     total_sleep = State()
@@ -59,6 +60,7 @@ class ClientState(StatesGroup):
 
 @dp.message(lambda message: message.text is not None and message.text.lower() in ['в главное меню', '/start'])
 async def start(message: Message, state: FSMContext) -> None:
+    await state.set_state(ClientState.start)
     answer = await create_profile(user_id=message.from_user.id)
     if answer is not None:
         data = {}
@@ -116,10 +118,11 @@ async def settings(message: Message, state: FSMContext = None) -> None:
 @dp.message(lambda message: message.text is not None and message.text.lower() == 'заполнить дневник')
 async def fill_diary(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
-    if 'daily_scores' in user_data:
-        await existing_user(message, state)
-    else:
-        await handle_new_user(message, state)
+    if user_data != []:
+        if 'daily_scores' in user_data:
+            await existing_user(message, state)
+        else:
+            await handle_new_user(message, state)
 
 
 @dp.message(lambda message: message.text is not None and message.text.lower() == 'вывести дневник')
@@ -888,6 +891,7 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
     #     await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
 
 
+
 async def existing_user(message, state: FSMContext):
     user_data = await state.get_data()
     if 'daily_scores' in user_data:
@@ -934,7 +938,7 @@ def generate_unique_id_from_args(args_dict):
     return hashlib.sha256(serialized_args.encode()).hexdigest()
 
 
-async def handle_new_user(message: Message, state):
+async def handle_new_user(message: Message, state: FSMContext):
     info = await bot.get_me()
     await message.answer_sticker('CAACAgIAAxkBAAIsZGVY5wgzBq6lUUSgcSYTt99JnOBbAAIIAAPANk8Tb2wmC94am2kzBA')
     await message.answer(
