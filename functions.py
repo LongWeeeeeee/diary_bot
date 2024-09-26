@@ -58,6 +58,7 @@ translate = {'понедельник': 'mon', 'вторник': 'tue', 'сред
              'субботу': 'sat',
              'воскресенье': 'sun'}
 
+
 async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_rate: float,
                            my_steps: int,
                            daily_tasks: list,
@@ -98,7 +99,8 @@ async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_
     if not len(activities):
         await message.answer('Поздравляю! дневник заполнен')
     else:
-        personal_records = await counter_max_days(data=data, daily_scores=daily_tasks, message=message, activities=activities, personal_records=personal_records)
+        personal_records = await counter_max_days(data=data, daily_scores=daily_tasks, message=message,
+                                                  activities=activities, personal_records=personal_records)
         return personal_records
 
 
@@ -110,19 +112,20 @@ def counter_negative(column, current_word, count=0):
                 if word == current_word:
                     return count
             count += 1
-        else: return count
+        else: 
+            return count
     return count
 
 
 def day_to_prefix(day: str) -> str:
     day_to_prefix_dict = {
-        'воскресенье' : 'каждое',
-        'субботу' : 'каждую',
-        'пятницу' : 'каждую',
-        'четверг' : 'каждый',
-        'среду' : 'каждую',
-        'вторник' : 'каждый',
-        'понедельник' : 'каждый'
+        'воскресенье': 'каждое',
+        'субботу': 'каждую',
+        'пятницу': 'каждую',
+        'четверг': 'каждый',
+        'среду': 'каждую',
+        'вторник': 'каждый',
+        'понедельник': 'каждый'
     }
     return day_to_prefix_dict[day]
 
@@ -199,7 +202,7 @@ def keyboard_builder(inp: list, grid=1, chosen=None, add_dell=True, add_sent=Tru
 
 
 def generate_unique_id_from_args(args_dict):
-    # Сериализуем аргументы в строку в формате JSON
+    # Сериалзуем аргументы в строку в формате JSON
     copy_args_dict = args_dict.copy()
     copy_args_dict['args'] = args_dict['args'][1]
     serialized_args = json.dumps(copy_args_dict, sort_keys=True)
@@ -239,8 +242,8 @@ async def rebuild_keyboard(state: FSMContext, tasks_type):
     chosen_tasks = user_states_data[tasks_type]
     call = user_states_data['call']
     scheduler_arguments = user_states_data['scheduler_arguments']
-    for iter in chosen_tasks:
-        del scheduler_arguments[iter]
+    for itr in chosen_tasks:
+        del scheduler_arguments[itr]
     if len(scheduler_arguments) == 0:
         del user_states_data['scheduler_arguments']
         await state.set_data(user_states_data)
@@ -268,12 +271,14 @@ async def scheduler_list(message, state, out_message, user_states_data, **kwargs
     await start(message, state)
 
 
-async def start(message: Message, state: FSMContext) -> None:
+async def start(message: Message, state: FSMContext, flag=True) -> None:
     await state.set_state(ClientState.start)
     answer = await create_profile(user_id=message.from_user.id)
-    if answer is not None:ˆ
+    if answer is not None:
         data = {}
-        daily_tasks, one_time_jobs, scheduler_arguments, personal_records, previous_diary, chosen_collected_data = json.loads(answer[1]), json.loads(answer[2]), json.loads(answer[3]), json.loads(answer[4]), answer[5], json.loads(answer[6])
+        daily_tasks, one_time_jobs, scheduler_arguments, personal_records,\
+            previous_diary, chosen_collected_data = json.loads(answer[1]), json.loads(answer[2]),\
+            json.loads(answer[3]), json.loads(answer[4]), answer[5], json.loads(answer[6])
         if len(daily_tasks):
             data['daily_tasks'] = daily_tasks
         else:
@@ -288,29 +293,32 @@ async def start(message: Message, state: FSMContext) -> None:
         if len(previous_diary):
             data['previous_diary'] = previous_diary
         data['chosen_collected_data'] = chosen_collected_data
-        data['daily_chosen_tasks'] = []
-        data['one_time_chosen_tasks'] = []
+        user_data = await state.get_data()
+        if 'daily_chosen_tasks' not in user_data:
+            await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[], excel_chosen_tasks=[])
         await state.update_data(**data)
         path = str(message.from_user.id) + '_Diary.xlsx'
         if os.path.exists(path):
-            keyboard = generate_keyboard(['Вывести Дневник', 'Настройки', 'Скачать Дневник'], first_button='Заполнить Дневник')
+            keyboard = generate_keyboard(['Вывести Дневник', 'Настройки', 'Скачать Дневник'],
+                                         first_button='Заполнить Дневник')
         else:
             keyboard = generate_keyboard(['Настройки', 'Заполнить Дневник'])
         await message.answer('Главное меню', reply_markup=keyboard)
-        #загрузка данных в scheduler из scheduler_arguments from database
+        # загрузка данных в scheduler из scheduler_arguments from database
         await scheduler_in(data, state)
     else:
         await handle_new_user(message, state)
 
+
 async def executing_scheduler_job(state, out_message):
-    # функция которая срабатывает когда срабатывает scheduler
+    # функция, которая срабатывает, когда срабатывает scheduler
     user_states_data = await state.get_data()
     scheduler_arguments = user_states_data['scheduler_arguments']
     if scheduler_arguments[out_message]['trigger'] == 'date':
         del scheduler_arguments[out_message]
         await edit_database(scheduler_arguments=scheduler_arguments)
     # Я напомню вам : "тес" 14 января 2024
-    job = normalized(out_message.split(' : ')[1]).replace('"', '')
+    job = normalized(out_message.split(': ')[1]).replace('"', '')
     try:
         one_time_jobs = user_states_data['one_time_jobs']
         one_time_jobs.append(job)
@@ -335,7 +343,8 @@ async def counter_max_days(data, daily_scores, message, activities, personal_rec
             personal_records = {}
         for key, value in positive_dict.items():
             if key in personal_records:
-                if personal_records[key] < value: personal_records[key] = value
+                if personal_records[key] < value:
+                    personal_records[key] = value
             else:
                 personal_records[key] = value
             if value not in [0, 1]:
@@ -344,8 +353,10 @@ async def counter_max_days(data, daily_scores, message, activities, personal_rec
         if positive_output:
             output += f'Поздравляю! Вы соблюдаете эти дела уже столько дней:\n{positive_output}'
         if negative_output:
-            if output != '': output += '\n\n'
-            output += f'Вы не делали эти дела уже столько дней:\n{negative_output}\n\nМожет стоит дать им еще один шанс?'
+            if output != '':
+                output += '\n\n'
+            output += f'Вы не делали эти дела уже столько дней:\n{negative_output}\n\n' \
+                      f'Может стоит дать им еще один шанс?'
         if output:
             sent_message = await message.answer(output)
             await message.bot.pin_chat_message(message.chat.id, sent_message.message_id)
@@ -354,10 +365,10 @@ async def counter_max_days(data, daily_scores, message, activities, personal_rec
         await message.answer('Поздравляю! дневник заполнен')
 
 
-def generate_keyboard(buttons: list, last_button = None, first_button = None):
-    if last_button != None:
+def generate_keyboard(buttons: list, last_button=None, first_button=None):
+    if last_button is not None:
         kb = [[types.KeyboardButton(text=button) for button in buttons], [types.KeyboardButton(text=last_button)]]
-    elif first_button != None:
+    elif first_button is not None:
         kb = [[types.KeyboardButton(text=first_button)], [types.KeyboardButton(text=button) for button in buttons]]
     else:
         kb = [[types.KeyboardButton(text=button) for button in buttons]]
@@ -368,10 +379,8 @@ def generate_keyboard(buttons: list, last_button = None, first_button = None):
     return keyboard
 
 
-
-
 def normalized(text):
-    return re.sub(r',(?=[^\s])', ', ', text).lower().replace('ё', 'е')
+    return re.sub(r',(?=\S)', ', ', text).lower().replace('ё', 'е')
 
 
 async def diary_out(message):
@@ -389,8 +398,7 @@ async def diary_out(message):
     # Перебор и отправка последних 7 строк
     for index, row in last_entries.iterrows():
         message_sheet = "{} | {} | {} | {} | {} | {} | {}".format(row["Дата"], row["Дела за день"], row["Шаги"],
-                                                                       row["Total sleep"], row['Deep sleep'],
-                                                                       row['О дне'], row['My rate'])
+                            row["Total sleep"], row['Deep sleep'], row['О дне'], row['My rate'])
 
         # Разделение длинного сообщения на части
         message_parts = [message_sheet[i:i + 4096] for i in range(0, len(message_sheet), 4096)]
