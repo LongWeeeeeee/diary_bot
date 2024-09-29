@@ -576,14 +576,11 @@ async def change_one_time_jobs_2(message: Message, state: FSMContext) -> None:
             await message.answer(
                 f'"{i}" Должно быть короче на {num} cимвол\nПопробуйте использовать эмодзи 🎸🕺🍫 или разбейте на 2')
             return
-    try:
-        one_time_jobs = user_states_data['one_time_jobs']
-        one_time_jobs += to_add_one_time_jobs
-    except KeyError:
-        one_time_jobs = to_add_one_time_jobs
+    one_time_chosen_tasks = user_states_data['one_time_chosen_tasks']
+    one_time_jobs = user_states_data['one_time_jobs'] + to_add_one_time_jobs
     if 'one_time_call' in user_states_data:
         call = user_states_data['one_time_call']
-        keyboard = keyboard_builder(inp=one_time_jobs, grid=1)
+        keyboard = keyboard_builder(inp=one_time_jobs, chosen=one_time_chosen_tasks, grid=1)
         await bot.edit_message_reply_markup(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -612,9 +609,10 @@ async def change_daily_jobs_1(message: Message, state: FSMContext) -> None:
             return
     for one_jobs in str_data:
         daily_tasks.append(one_jobs)
+    daily_chosen_tasks = user_data['daily_chosen_tasks']
     if 'call' in user_data:
         call = user_data['call']
-        keyboard = keyboard_builder(inp=daily_tasks, grid=2)
+        keyboard = keyboard_builder(inp=daily_tasks, chosen=daily_chosen_tasks, grid=2)
         await bot.edit_message_reply_markup(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
