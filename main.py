@@ -302,9 +302,12 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
         personal_records = await add_day_to_excel(message=message, personal_rate=personal_rate, **data)
         await edit_database(personal_records=personal_records)
         if 'previous_diary' in user_states_data:
-            previous_diary = user_states_data['previous_diary']
-            await bot.delete_message(message.chat.id, previous_diary)
-            del user_states_data['previous_diary']
+            try:
+                previous_diary = user_states_data['previous_diary']
+                await bot.delete_message(message.chat.id, previous_diary)
+                del user_states_data['previous_diary']
+            except:
+                pass
         sent_message = await download_diary(message, state)
         await edit_database(previous_diary=sent_message.message_id)
         await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[])
