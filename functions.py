@@ -20,6 +20,8 @@ import datetime
 from datetime import timedelta
 
 
+scheduler = AsyncIOScheduler()
+scheduler.configure(timezone='Europe/Moscow')
 class ClientState(StatesGroup):
     greet = State()
     start = State()
@@ -43,6 +45,9 @@ class ClientState(StatesGroup):
     date_jobs_once = State()
     date_jobs_month = State()
     collected_data = State()
+    notification_proceed = State()
+    notification_proceed_1 = State()
+    notification_set_date = State()
 
 
 bot = Bot(token=keys.Token)
@@ -51,8 +56,8 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(leve
 already_started = False
 # locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
 remove_markup = types.ReplyKeyboardRemove()
-scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
-scheduler.start()
+# scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
+# scheduler.start()
 negative_responses = {'не', 'нет', '-', 'pass', 'пасс', 'не хочу', 'скип', 'неа', 'не-а', '0', 0}
 translate = {'понедельник': 'mon', 'вторник': 'tue', 'среду': 'wed', 'четверг': 'thu', 'пятницу': 'fri',
              'субботу': 'sat',
@@ -143,30 +148,30 @@ def counter_positive(current_word, column, count=0):
     return count
 
 
-async def scheduler_in(data, state):
-    if 'scheduler_arguments' in data:
-        # загрузка в scheduler заданий из database
-        for key in list(data['scheduler_arguments'].keys()):
-            values = data['scheduler_arguments'][key]
-            values_copy = values.copy()
-            values_copy['args'] = (state, key)
-            if 'date' in values_copy:
-                values_copy['date'] = datetime.datetime.strptime(values['date'], '%Y-%m-%d')
-            elif 'run_date' in values_copy:
-                values_copy['run_date'] = datetime.datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
-                current_date = datetime.datetime.now()
-                if current_date > (values_copy['run_date'] + timedelta(minutes=1)):
-                    del data['scheduler_arguments'][key]
-                    continue
-            unique_id = generate_unique_id_from_args(values_copy)
-            if not any(job.id == unique_id for job in scheduler.get_jobs()):
-                values_copy['id'] = unique_id
-                scheduler.add_job(executing_scheduler_job, **values_copy)
-
-        if len(data['scheduler_arguments']) == 0:
-            del data['scheduler_arguments']
-            await state.set_data(data)
-            await edit_database(scheduler_arguments={})
+# async def scheduler_in(data, state):
+#     if 'scheduler_arguments' in data:
+#         # загрузка в scheduler заданий из database
+#         for key in list(data['scheduler_arguments'].keys()):
+#             values = data['scheduler_arguments'][key]
+#             values_copy = values.copy()
+#             values_copy['args'] = (state, key)
+#             if 'date' in values_copy:
+#                 values_copy['date'] = datetime.datetime.strptime(values['date'], '%Y-%m-%d')
+#             elif 'run_date' in values_copy:
+#                 values_copy['run_date'] = datetime.datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
+#                 current_date = datetime.datetime.now()
+#                 if current_date > (values_copy['run_date'] + timedelta(minutes=1)):
+#                     del data['scheduler_arguments'][key]
+#                     continue
+#             unique_id = generate_unique_id_from_args(values_copy)
+#             if not any(job.id == unique_id for job in scheduler.get_jobs()):
+#                 values_copy['id'] = unique_id
+#                 scheduler.add_job(executing_scheduler_job, **values_copy)
+#
+#         if len(data['scheduler_arguments']) == 0:
+#             del data['scheduler_arguments']
+#             await state.set_data(data)
+#             await edit_database(scheduler_arguments={})
 
 
 def keyboard_builder(inp: list, grid=1, chosen=None, add_dell=True, add_sent=True):
@@ -237,66 +242,83 @@ async def daily_jobs(message, state: FSMContext):
         await handle_new_user(message, state)
 
 
-async def rebuild_keyboard(state: FSMContext, tasks_type):
-    user_states_data = await state.get_data()
-    chosen_tasks = user_states_data[tasks_type]
-    call = user_states_data['call']
-    scheduler_arguments = user_states_data['scheduler_arguments']
-    for itr in chosen_tasks:
-        del scheduler_arguments[itr]
-    if len(scheduler_arguments) == 0:
-        del user_states_data['scheduler_arguments']
-        await state.set_data(user_states_data)
+# async def rebuild_keyboard(state: FSMContext, tasks_type):
+#     user_states_data = await state.get_data()
+#     chosen_tasks = user_states_data[tasks_type]
+#     call = user_states_data['call']
+#     scheduler_arguments = user_states_data['scheduler_arguments']
+#     for itr in chosen_tasks:
+#         del scheduler_arguments[itr]
+#     if len(scheduler_arguments) == 0:
+#         del user_states_data['scheduler_arguments']
+#         await state.set_data(user_states_data)
+#     else:
+#         scheduler_arguments_inp = [key.split('Я напомню вам : ')[1].replace('"', '') for key in
+#                                    user_states_data['scheduler_arguments']]
+#         keyboard = keyboard_builder(inp=scheduler_arguments_inp, add_sent=False)
+#         await bot.edit_message_reply_markup(
+#             chat_id=call.message.chat.id,
+#             message_id=call.message.message_id,
+#             reply_markup=keyboard
+#         )
+
+
+# async def scheduler_list(message, state, out_message, user_states_data, **kwargs):
+#     # загрузка аргументов в database
+#     await message.answer(out_message)
+#     try:
+#         scheduler_arguments = user_states_data['scheduler_arguments']
+#         scheduler_arguments[out_message] = {**kwargs}
+#     except KeyError:
+#         scheduler_arguments = {out_message: {**kwargs}}
+#     await edit_database(scheduler_arguments=scheduler_arguments)
+#     await state.update_data(scheduler_arguments=scheduler_arguments)
+#     await start(message, state)
+async def fill_diary(message: Message, state: FSMContext) -> None:
+    user_data = await state.get_data()
+    if user_data:
+        if 'daily_tasks' in user_data:
+            await daily_jobs(message, state)
+        else:
+            await handle_new_user(message, state)
     else:
-        scheduler_arguments_inp = [key.split('Я напомню вам : ')[1].replace('"', '') for key in
-                                   user_states_data['scheduler_arguments']]
-        keyboard = keyboard_builder(inp=scheduler_arguments_inp, add_sent=False)
-        await bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=keyboard
-        )
-
-
-async def scheduler_list(message, state, out_message, user_states_data, **kwargs):
-    # загрузка аргументов в database
-    await message.answer(out_message)
-    try:
-        scheduler_arguments = user_states_data['scheduler_arguments']
-        scheduler_arguments[out_message] = {**kwargs}
-    except KeyError:
-        scheduler_arguments = {out_message: {**kwargs}}
-    await edit_database(scheduler_arguments=scheduler_arguments)
-    await state.update_data(scheduler_arguments=scheduler_arguments)
-    await start(message, state)
-
+        await start(message, state)
 
 async def start(message: Message, state: FSMContext, flag=True) -> None:
+    data = {}
     await state.set_state(ClientState.start)
     answer = await create_profile(user_id=message.from_user.id)
     if answer is not None:
-        data = {}
+
         daily_tasks, one_time_jobs, scheduler_arguments, personal_records,\
-            previous_diary, chosen_collected_data = json.loads(answer[1]), json.loads(answer[2]),\
-            json.loads(answer[3]), json.loads(answer[4]), answer[5], json.loads(answer[6])
-        if len(daily_tasks):
-            data['daily_tasks'] = daily_tasks
-        else:
-            await handle_new_user(message, state)
-            return
-        if len(one_time_jobs):
-            data['one_time_jobs'] = one_time_jobs
-        if len(scheduler_arguments):
-            data['scheduler_arguments'] = scheduler_arguments
+            previous_diary, chosen_collected_data, notifications_data = json.loads(answer[1]), json.loads(answer[2]),\
+            json.loads(answer[3]), json.loads(answer[4]), answer[5], json.loads(answer[6]), json.loads(answer[7])
+        data['daily_tasks'] = daily_tasks
+        data['one_time_jobs'] = one_time_jobs
+        data['scheduler_arguments'] = scheduler_arguments
         if personal_records is not None and len(personal_records) != 0:
             data['personal_records'] = personal_records
-        if len(previous_diary):
-            data['previous_diary'] = previous_diary
+        data['previous_diary'] = previous_diary
+        data['notifications_data'] = notifications_data
+        if notifications_data.get('chosen_notifications', []):
+            hours = notifications_data['hours']
+            minutes = notifications_data['minutes']
+            if notifications_data.setdefault('chosen_notifications', []) == ['Включено']:
+                job_id = scheduler.add_job(
+                    fill_diary,
+                    trigger='cron',
+                    hour=hours,
+                    minute=minutes,
+                    args=(message, state))
+                data['notifications_data']['job_id'] = job_id.id
         data['chosen_collected_data'] = chosen_collected_data
         user_data = await state.get_data()
         if 'daily_chosen_tasks' not in user_data:
             await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[], excel_chosen_tasks=[])
         await state.update_data(**data)
+        if not daily_tasks:
+            await handle_new_user(message, state)
+            return
         path = str(message.from_user.id) + '_Diary.xlsx'
         if os.path.exists(path):
             keyboard = generate_keyboard(['Вывести Дневник', 'Настройки', 'Скачать Дневник'],
@@ -305,28 +327,28 @@ async def start(message: Message, state: FSMContext, flag=True) -> None:
             keyboard = generate_keyboard(['Настройки', 'Заполнить Дневник'])
         await message.answer('Главное меню', reply_markup=keyboard)
         # загрузка данных в scheduler из scheduler_arguments from database
-        await scheduler_in(data, state)
+        # await scheduler_in(data, state)
     else:
         await handle_new_user(message, state)
 
 
-async def executing_scheduler_job(state, out_message):
-    # функция, которая срабатывает, когда срабатывает scheduler
-    user_states_data = await state.get_data()
-    scheduler_arguments = user_states_data['scheduler_arguments']
-    if scheduler_arguments[out_message]['trigger'] == 'date':
-        del scheduler_arguments[out_message]
-        await edit_database(scheduler_arguments=scheduler_arguments)
-    # Я напомню вам : "тес" 14 января 2024
-    job = normalized(out_message.split(': ')[1]).replace('"', '')
-    try:
-        one_time_jobs = user_states_data['one_time_jobs']
-        one_time_jobs.append(job)
-        await state.update_data(one_time_jobs=one_time_jobs)
-        await edit_database(one_time_jobs=one_time_jobs)
-    except KeyError:
-        await state.update_data(one_time_jobs=job)
-        await edit_database(one_time_jobs=job)
+# async def executing_scheduler_job(state, out_message):
+#     # функция, которая срабатывает, когда срабатывает scheduler
+#     user_states_data = await state.get_data()
+#     scheduler_arguments = user_states_data['scheduler_arguments']
+#     if scheduler_arguments[out_message]['trigger'] == 'date':
+#         del scheduler_arguments[out_message]
+#         await edit_database(scheduler_arguments=scheduler_arguments)
+#     # Я напомню вам : "тес" 14 января 2024
+#     job = normalized(out_message.split(': ')[1]).replace('"', '')
+#     try:
+#         one_time_jobs = user_states_data['one_time_jobs']
+#         one_time_jobs.append(job)
+#         await state.update_data(one_time_jobs=one_time_jobs)
+#         await edit_database(one_time_jobs=one_time_jobs)
+#     except KeyError:
+#         await state.update_data(one_time_jobs=job)
+#         await edit_database(one_time_jobs=job)
 
 
 async def counter_max_days(data, daily_scores, message, activities, personal_records, output=''):
