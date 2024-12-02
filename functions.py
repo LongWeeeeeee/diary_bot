@@ -17,6 +17,7 @@ import pandas as pd
 from aiogram import types
 import hashlib
 from datetime import timedelta
+os.environ['TZ'] = 'Etc/UTC'
 
 
 scheduler = AsyncIOScheduler()
