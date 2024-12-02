@@ -464,23 +464,18 @@ async def notification_set_date(message, state):
     notifications_data['minutes'] = minutes
     await edit_database(notifications_data=notifications_data)
     await state.update_data(notifications_data=notifications_data)
-    if notifications_data.setdefault('chosen_notifications', []) == ['Включено']:
-        if 'job_id' in notifications_data:
-            job_id = notifications_data['job_id']
-            scheduler.remove_job(job_id=job_id)
-        job_id = scheduler.add_job(
-            fill_diary,
-            trigger='cron',
-            hour=hours,
-            minute=minutes,
-            args=(message, state))
-        await state.update_data(job_id=job_id.id)
-        await message.answer(f'Отлично! Теперь напоминания будут приходить каждый день в {hours}:{minutes}')
-        await start(message, state)
-    else:
-        if 'job_id' in notifications_data:
-            job_id = notifications_data['job_id']
-            scheduler.remove_job(job_id=job_id)
+    if 'job_id' in notifications_data:
+        job_id = notifications_data['job_id']
+        scheduler.remove_job(job_id=job_id)
+    job_id = scheduler.add_job(
+        fill_diary,
+        trigger='cron',
+        hour=hours,
+        minute=minutes,
+        args=(message, state))
+    await state.update_data(job_id=job_id.id)
+    await message.answer(f'Отлично! Теперь напоминания будут приходить каждый день в {hours}:{minutes}')
+    await start(message, state)
 
 
 @dp.message(lambda message: message.text.lower() == 'дела в определенную дату', ClientState.settings)
