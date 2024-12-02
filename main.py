@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile
@@ -8,9 +7,8 @@ from aiogram.types import Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlite import database_start, edit_database
 from functions import generate_keyboard, diary_out, add_day_to_excel, normalized,\
-    day_to_prefix, daily_jobs, handle_new_user, keyboard_builder, generate_unique_id_from_args,\
-    start, dp, ClientState, bot, negative_responses,\
-    translate, remove_markup, scheduler
+    daily_jobs, handle_new_user, keyboard_builder, generate_unique_id_from_args,\
+    start, dp, ClientState, bot, negative_responses, remove_markup, scheduler
 
 
 @dp.message(lambda message: message.text is not None and message.text.lower() == 'заполнить дневник')

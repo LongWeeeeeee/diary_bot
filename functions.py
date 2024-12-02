@@ -12,11 +12,10 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import keys
-from sqlite import create_profile, edit_database
+from sqlite import create_profile
 import pandas as pd
 from aiogram import types
 import hashlib
-import datetime
 from datetime import timedelta
 
 
