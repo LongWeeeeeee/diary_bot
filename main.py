@@ -113,7 +113,7 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
                 message_id=call.message.message_id,
                 reply_markup=keyboard)
 
-            await state.update_data(chosen_tasks=[], daily_tasks=daily_tasks)
+            await state.update_data(daily_chosen_tasks=[], daily_tasks=daily_tasks)
         else:
             new_ot_builder = InlineKeyboardBuilder()
             new_ot_builder.button(text="💼Добавить 💼", callback_data="Добавить")
@@ -721,7 +721,7 @@ async def change_daily_jobs_1(message: Message, state: FSMContext) -> None:
     user_message = normalized(message.text)
     str_data = user_message.split(', ')
     for i in str_data:
-        num = len(i) - 22
+        num = len(i) - 19
         if num > 0:
             await message.answer(f'"{i}" Должно быть короче на {num} cимвол\n Попробуйте использовать эмодзи 🎸🕺🍫')
             return
