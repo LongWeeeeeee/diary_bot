@@ -286,6 +286,7 @@ async def fill_diary(message: Message, state: FSMContext) -> None:
 
 async def start(message: Message, state: FSMContext, flag=True) -> None:
     data = {}
+    user_data = await state.get_data()
     await state.set_state(ClientState.start)
     answer = await create_profile(user_id=message.from_user.id)
     if answer is not None:
@@ -303,14 +304,14 @@ async def start(message: Message, state: FSMContext, flag=True) -> None:
         if notifications_data.get('chosen_notifications', []):
             hours = notifications_data['hours']
             minutes = notifications_data['minutes']
-            if notifications_data.setdefault('chosen_notifications', []) == ['Включено']:
+            if notifications_data.setdefault('chosen_notifications', []) == ['Включено'] and not user_data.get('job_id', ''):
                 job_id = scheduler.add_job(
                     fill_diary,
                     trigger='cron',
                     hour=hours,
                     minute=minutes,
                     args=(message, state))
-                data['notifications_data']['job_id'] = job_id.id
+                data['job_id'] = job_id.id
         data['chosen_collected_data'] = chosen_collected_data
         user_data = await state.get_data()
         if 'daily_chosen_tasks' not in user_data:

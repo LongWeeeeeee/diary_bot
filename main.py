@@ -435,14 +435,12 @@ async def notifications_proceed(call, state):
                 args=(message, state)
                 # Replace with user IDs and message
             )
-            notifications_data.setdefault('job_id', job_id.id)
-            await state.update_data(notifications_data=notifications_data)
+            await state.update_data(job_id=job_id.id)
         else:
-            if 'job_id' in user_data['notifications_data']:
-                job_id = user_data['notifications_data']['job_id']
+            job_id = user_data.get('job_id', '')
+            if job_id:
                 scheduler.remove_job(job_id=job_id)
-                del user_data['notifications_data']['job_id']
-                await state.update_data(notifications_data=notifications_data)
+                await state.update_data(job_id='')
         await bot.edit_message_reply_markup(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -458,14 +456,17 @@ async def notification_set_date(message, state):
     user_data = await state.get_data()
     notifications_data = user_data['notifications_data']
     notification_time = message.text.split(':')
+    if len(notification_time) != 2:
+        await message.answer(f'{message.text} должно быть датой, например 14:20')
+        return
     hours = notification_time[0]
     minutes = notification_time[1]
     notifications_data['hours'] = hours
     notifications_data['minutes'] = minutes
     await edit_database(notifications_data=notifications_data)
     await state.update_data(notifications_data=notifications_data)
-    if 'job_id' in notifications_data:
-        job_id = notifications_data['job_id']
+    job_id = user_data.get('job_id', '')
+    if job_id:
         scheduler.remove_job(job_id=job_id)
     job_id = scheduler.add_job(
         fill_diary,
@@ -501,100 +502,100 @@ async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
         await start(message, state)
 
 
-@dp.callback_query(ClientState.date_jobs)
-async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMContext):
-    await call.answer()
-    data = call.data
-
-    if data == 'Удалить':
-        user_states_data = await state.get_data()
-        date_chosen_tasks = user_states_data['date_chosen_tasks']
-        scheduler_arguments = user_states_data['scheduler_arguments']
-        for itr in date_chosen_tasks:
-            for key in list(scheduler_arguments.keys()):
-                values = scheduler_arguments[key]
-                values_copy = values.copy()
-                values_copy['args'] = (state, key)
-                if 'date' in values_copy:
-                    values_copy['date'] = datetime.datetime.strptime(values['date'], '%Y-%m-%d')
-                elif 'run_date' in values_copy:
-                    values_copy['run_date'] = datetime.datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
-                unique_id = generate_unique_id_from_args(values_copy)
-                if any(job.id == unique_id for job in scheduler.get_jobs()):
-                    scheduler.remove_job(job_id=unique_id)
-            del scheduler_arguments[itr]
-
-        if len(scheduler_arguments) == 0:
-            del user_states_data['scheduler_arguments']
-            await state.set_data(user_states_data)
-
-        else:
-            scheduler_arguments_inp = [key.split('Я напомню вам : ')[1].replace('"', '')
-                                       for key in user_states_data['scheduler_arguments']]
-            keyboard = keyboard_builder(inp=scheduler_arguments_inp, add_sent=False)
-            await bot.edit_message_reply_markup(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                reply_markup=keyboard)
-
-        await state.update_data(scheduler_arguments=scheduler_arguments, date_chosen_tasks=[])
-        await edit_database(scheduler_arguments=scheduler_arguments)
-
-    elif data == 'Добавить':
-        await call.message.answer('Введите новое дело',)
-        await state.update_data(call=call)
-        await state.set_state(ClientState.date_jobs_1)
-
-    else:
-        data = int(data)
-        user_states_data = await state.get_data()
-        scheduler_arguments = [key.split('Я напомню вам : ')[1].replace('"', '')
-                               for key in user_states_data['scheduler_arguments'].keys()]
-        date_chosen_tasks = user_states_data['date_chosen_tasks']
-        if scheduler_arguments[data] in date_chosen_tasks:
-            date_chosen_tasks.remove(scheduler_arguments[data])
-        else:
-            date_chosen_tasks.append(scheduler_arguments[data])
-        await state.update_data(date_chosen_tasks=date_chosen_tasks)
-        keyboard = keyboard_builder(inp=scheduler_arguments, chosen=date_chosen_tasks, add_sent=False)
-        await bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=keyboard)
-
-
-@dp.message(ClientState.date_jobs_1)
-async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
-    await state.update_data(new_date_jobs=message.text)
-    keyboard = generate_keyboard(['В день недели', 'Число месяца', 'Каждый год', 'Разово'])
-    await message.answer('Выберите как и когда вы бы желали чтобы вам напомнили об этом деле', reply_markup=keyboard)
-    await state.set_state(ClientState.date_jobs_2)
+# @dp.callback_query(ClientState.date_jobs)
+# async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMContext):
+#     await call.answer()
+#     data = call.data
+#
+#     if data == 'Удалить':
+#         user_states_data = await state.get_data()
+#         date_chosen_tasks = user_states_data['date_chosen_tasks']
+#         scheduler_arguments = user_states_data['scheduler_arguments']
+#         for itr in date_chosen_tasks:
+#             for key in list(scheduler_arguments.keys()):
+#                 values = scheduler_arguments[key]
+#                 values_copy = values.copy()
+#                 values_copy['args'] = (state, key)
+#                 if 'date' in values_copy:
+#                     values_copy['date'] = datetime.datetime.strptime(values['date'], '%Y-%m-%d')
+#                 elif 'run_date' in values_copy:
+#                     values_copy['run_date'] = datetime.datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
+#                 unique_id = generate_unique_id_from_args(values_copy)
+#                 if any(job.id == unique_id for job in scheduler.get_jobs()):
+#                     scheduler.remove_job(job_id=unique_id)
+#             del scheduler_arguments[itr]
+#
+#         if len(scheduler_arguments) == 0:
+#             del user_states_data['scheduler_arguments']
+#             await state.set_data(user_states_data)
+#
+#         else:
+#             scheduler_arguments_inp = [key.split('Я напомню вам : ')[1].replace('"', '')
+#                                        for key in user_states_data['scheduler_arguments']]
+#             keyboard = keyboard_builder(inp=scheduler_arguments_inp, add_sent=False)
+#             await bot.edit_message_reply_markup(
+#                 chat_id=call.message.chat.id,
+#                 message_id=call.message.message_id,
+#                 reply_markup=keyboard)
+#
+#         await state.update_data(scheduler_arguments=scheduler_arguments, date_chosen_tasks=[])
+#         await edit_database(scheduler_arguments=scheduler_arguments)
+#
+#     elif data == 'Добавить':
+#         await call.message.answer('Введите новое дело',)
+#         await state.update_data(call=call)
+#         await state.set_state(ClientState.date_jobs_1)
+#
+#     else:
+#         data = int(data)
+#         user_states_data = await state.get_data()
+#         scheduler_arguments = [key.split('Я напомню вам : ')[1].replace('"', '')
+#                                for key in user_states_data['scheduler_arguments'].keys()]
+#         date_chosen_tasks = user_states_data['date_chosen_tasks']
+#         if scheduler_arguments[data] in date_chosen_tasks:
+#             date_chosen_tasks.remove(scheduler_arguments[data])
+#         else:
+#             date_chosen_tasks.append(scheduler_arguments[data])
+#         await state.update_data(date_chosen_tasks=date_chosen_tasks)
+#         keyboard = keyboard_builder(inp=scheduler_arguments, chosen=date_chosen_tasks, add_sent=False)
+#         await bot.edit_message_reply_markup(
+#             chat_id=call.message.chat.id,
+#             message_id=call.message.message_id,
+#             reply_markup=keyboard)
 
 
-@dp.message(ClientState.date_jobs_2)
-async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
-    user_message = normalized(message.text)
-    if user_message == 'в день недели':
-        keyboard = generate_keyboard(
-            ['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу', 'воскресенье'])
-        await message.answer(
-            'В какой день недели?', reply_markup=keyboard)
-        await state.set_state(ClientState.date_jobs_week)
-    elif user_message == 'число месяца':
-        await message.answer(
-            'Какого числа месяца вам нужно напомнить об этом деле?')
-        await state.set_state(ClientState.date_jobs_month)
-    elif user_message == 'каждый год':
-        await message.answer(
-            'Введите дату когда вам о нем напомнить в формате день-месяц, например:')
-        next_day = datetime.date.today()
-        await message.answer(next_day.strftime("%d-%m"))
-        await state.set_state(ClientState.date_jobs_year)
-    elif user_message == 'разово':
-        await message.answer(
-            'Введите дату когда вам о нем напомнить в формате год-месяц-день, например:')
-        await message.answer(str(datetime.date.today()))
-        await state.set_state(ClientState.date_jobs_once)
+# @dp.message(ClientState.date_jobs_1)
+# async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
+#     await state.update_data(new_date_jobs=message.text)
+#     keyboard = generate_keyboard(['В день недели', 'Число месяца', 'Каждый год', 'Разово'])
+#     await message.answer('Выберите как и когда вы бы желали чтобы вам напомнили об этом деле', reply_markup=keyboard)
+#     await state.set_state(ClientState.date_jobs_2)
+
+
+# @dp.message(ClientState.date_jobs_2)
+# async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
+#     user_message = normalized(message.text)
+#     if user_message == 'в день недели':
+#         keyboard = generate_keyboard(
+#             ['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу', 'воскресенье'])
+#         await message.answer(
+#             'В какой день недели?', reply_markup=keyboard)
+#         await state.set_state(ClientState.date_jobs_week)
+#     elif user_message == 'число месяца':
+#         await message.answer(
+#             'Какого числа месяца вам нужно напомнить об этом деле?')
+#         await state.set_state(ClientState.date_jobs_month)
+#     elif user_message == 'каждый год':
+#         await message.answer(
+#             'Введите дату когда вам о нем напомнить в формате день-месяц, например:')
+#         next_day = datetime.date.today()
+#         await message.answer(next_day.strftime("%d-%m"))
+#         await state.set_state(ClientState.date_jobs_year)
+#     elif user_message == 'разово':
+#         await message.answer(
+#             'Введите дату когда вам о нем напомнить в формате год-месяц-день, например:')
+#         await message.answer(str(datetime.date.today()))
+#         await state.set_state(ClientState.date_jobs_once)
 
 
 # @dp.message(ClientState.date_jobs_week)
