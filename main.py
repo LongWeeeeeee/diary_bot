@@ -474,7 +474,9 @@ async def notification_set_date(message, state):
         hour=hours,
         minute=minutes,
         args=(message, state))
-    await state.update_data(job_id=job_id.id)
+    notifications_data['chosen_notifications'] = ['Включено']
+    await state.update_data(job_id=job_id.id, notifications_data=notifications_data)
+    await edit_database(notifications_data=notifications_data)
     await message.answer(f'Отлично! Теперь напоминания будут приходить каждый день в {hours}:{minutes}')
     await start(message, state)
 
