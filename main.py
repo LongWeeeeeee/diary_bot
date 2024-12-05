@@ -201,6 +201,7 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
                 message_id=call.message.message_id,
                 reply_markup=keyboard)
             await state.update_data(one_time_jobs=one_time_jobs)
+            await edit_database(one_time_jobs=one_time_jobs)
 
         else:
             new_ot_builder = InlineKeyboardBuilder()
@@ -209,7 +210,7 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
             await state.set_data(user_states_data)
             await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
                                         reply_markup=new_ot_builder.as_markup(), text='Добавьте список дел')
-        await state.update_data(chosen_tasks=[])
+        await state.update_data(one_time_chosen_tasks=[])
         await edit_database(one_time_jobs=one_time_jobs)
 
     elif data == 'Добавить':
