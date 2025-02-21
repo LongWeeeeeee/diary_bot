@@ -16,7 +16,9 @@ from sqlite import create_profile
 import pandas as pd
 from aiogram import types
 import hashlib
-from datetime import timedelta
+from datetime import timedelta, datetime
+from sqlite import edit_database
+
 os.environ['TZ'] = 'Etc/UTC'
 
 
@@ -48,16 +50,17 @@ class ClientState(StatesGroup):
     notification_proceed = State()
     notification_proceed_1 = State()
     notification_set_date = State()
+    market = State()
+    new_market_product = State()
+    new_market_product_2 = State()
+    backpack = State()
 
 
 bot = Bot(token=keys.Token)
 dp = Dispatcher()
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 already_started = False
-# locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
 remove_markup = types.ReplyKeyboardRemove()
-# scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
-# scheduler.start()
 negative_responses = {'не', 'нет', '-', 'pass', 'пасс', 'не хочу', 'скип', 'неа', 'не-а', '0', 0}
 translate = {'понедельник': 'mon', 'вторник': 'tue', 'среду': 'wed', 'четверг': 'thu', 'пятницу': 'fri',
              'субботу': 'sat',
@@ -148,62 +151,77 @@ def counter_positive(current_word, column, count=0):
     return count
 
 
-# async def scheduler_in(data, state):
-#     if 'scheduler_arguments' in data:
-#         # загрузка в scheduler заданий из database
-#         for key in list(data['scheduler_arguments'].keys()):
-#             values = data['scheduler_arguments'][key]
-#             values_copy = values.copy()
-#             values_copy['args'] = (state, key)
-#             if 'date' in values_copy:
-#                 values_copy['date'] = datetime.datetime.strptime(values['date'], '%Y-%m-%d')
-#             elif 'run_date' in values_copy:
-#                 values_copy['run_date'] = datetime.datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
-#                 current_date = datetime.datetime.now()
-#                 if current_date > (values_copy['run_date'] + timedelta(minutes=1)):
-#                     del data['scheduler_arguments'][key]
-#                     continue
-#             unique_id = generate_unique_id_from_args(values_copy)
-#             if not any(job.id == unique_id for job in scheduler.get_jobs()):
-#                 values_copy['id'] = unique_id
-#                 scheduler.add_job(executing_scheduler_job, **values_copy)
-#
-#         if len(data['scheduler_arguments']) == 0:
-#             del data['scheduler_arguments']
-#             await state.set_data(data)
-#             await edit_database(scheduler_arguments={})
+async def scheduler_in(data, state):
+    if 'scheduler_arguments' in data:
+        # загрузка в scheduler заданий из database
+        for key in list(data['scheduler_arguments'].keys()):
+            values = data['scheduler_arguments'][key]
+            values_copy = values.copy()
+            values_copy['args'] = (state, key)
+            if 'date' in values_copy:
+                values_copy['date'] = datetime.strptime(values['date'], '%Y-%m-%d')
+            elif 'run_date' in values_copy:
+                values_copy['run_date'] = datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
+                current_date = datetime.now()
+                if current_date > (values_copy['run_date'] + timedelta(minutes=1)):
+                    del data['scheduler_arguments'][key]
+                    continue
+            unique_id = generate_unique_id_from_args(values_copy)
+            if not any(job.id == unique_id for job in scheduler.get_jobs()):
+                values_copy['id'] = unique_id
+                scheduler.add_job(executing_scheduler_job, **values_copy)
+
+        if len(data['scheduler_arguments']) == 0:
+            del data['scheduler_arguments']
+            await state.set_data(data)
+            await edit_database(scheduler_arguments={})
 
 
-def keyboard_builder(inp: list, grid=1, chosen=None, add_dell=True, add_sent=True):
+def keyboard_builder(inp, chosen, grid=1, price_tag=True, add_dell=True, checks=False, last_button="🚀Отправить 🚀", add_money=False):
+
     date_builder = InlineKeyboardBuilder()
-    for index, job in enumerate(inp):
-        if chosen is not None:
+    for job in inp:
+        if checks:
+            date_builder.button(text=f"{job} ✔️", callback_data=f"{job}")
+        elif price_tag == False:
             if job in chosen:
-                date_builder.button(text=f"{job} ✅️", callback_data=f"{index}")
+                date_builder.button(text=f"{job} ✅️", callback_data=f"{job}")
             else:
-                date_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
+                date_builder.button(text=f"{job} ✔️", callback_data=f"{job}")
         else:
-            date_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
+            product_name = job
+            price = inp[job]
+            if type(price) == dict:
+                for date in price:
+                    if price[date]['used'] is False:
+                        price = price[date]['price']
+                        date_builder.button(text=f"{price}💰 {product_name} ✔️", callback_data=f"{date}")
+            else:
+                if product_name in chosen:
+                    date_builder.button(text=f"{price}💰 {product_name} ✅️", callback_data=f"{product_name}")
+                else:
+                    date_builder.button(text=f"{price}💰 {product_name} ✔️", callback_data=f"{product_name}")
+
     date_builder.adjust(grid, grid)
     d_new_builder = InlineKeyboardBuilder()
+    if add_money:
+        d_new_builder.button(text="Начислить 💰", callback_data="Начислить")
     if add_dell:
-        d_new_builder.button(text="❌Удалить❌", callback_data="Удалить")
         d_new_builder.button(text="💼Добавить 💼", callback_data="Добавить")
-        d_new_builder.adjust(2)
-    if add_sent:
-        d_new_builder.button(text="🚀Отправить 🚀", callback_data="Отправить")
-        d_new_builder.adjust(2, 1)
+        if inp:
+            d_new_builder.button(text="❌Удалить❌", callback_data="Удалить")
+            d_new_builder.adjust(1, 2)
+    if last_button:
+        callback = re.sub(r'[\U0001F000-\U0001FAFF\s]+', '', last_button)
+        d_new_builder.button(text=last_button, callback_data=callback)
+        if add_money:
+            d_new_builder.adjust(1, 2, 1)
+        else:
+            d_new_builder.adjust(2, 1)
     date_builder.attach(d_new_builder)
     return date_builder.as_markup()
 
 
-# async def start_scheduler(message, state):
-#     global already_started
-#     if already_started:
-#         return
-#     scheduler.add_job(start, 'cron', hour=8, minute=00, args=(message, state))
-#     scheduler.start()
-#     already_started = True
 
 
 def generate_unique_id_from_args(args_dict):
@@ -221,135 +239,142 @@ async def handle_new_user(message: Message, state: FSMContext):
     await message.answer(
         f'''Привет, {message.from_user.full_name}! \nДобро пожаловать в {info.username}!
 Он поможет тебе вести отчет о твоих днях и делать выводы почему день был плохим или хорошим
-Для начала нужно задать список дел. Какие у вас есть дела в течении дня? Например:''')
-    await message.answer('встал в 6:30, лег в 11, зарядка утром, массаж, пп')
+Для начала нужно задать список дел и их стоимость. Какие у вас есть дела в течении дня? Например:''')
+    await message.answer('встал в 6:30 : 5, лег в 11 : 5, зарядка утром : 10, массаж : 3, пп : 20')
     await message.answer(
         'Вы можете воспользоваться предложенным списком или написать свой. Данные могут быть какие угодно',
         reply_markup=remove_markup)
     await state.set_state(ClientState.change_daily_jobs_1)
 
 
+@dp.message(lambda message: message.text and message.text.lower() == 'заполнить дневник')
 async def daily_jobs(message, state: FSMContext):
     user_data = await state.get_data()
-    if 'daily_tasks' in user_data:
-        daily_tasks = user_data['daily_tasks']
-        daily_chosen_tasks = user_data['daily_chosen_tasks']
-        keyboard = keyboard_builder(inp=daily_tasks, grid=2, chosen=daily_chosen_tasks)
+    daily_tasks = user_data['daily_tasks']
+    daily_chosen_tasks = user_data['daily_chosen_tasks']
+
+    if daily_tasks:
+        keyboard = keyboard_builder(inp=daily_tasks, grid=2, chosen=daily_chosen_tasks, add_dell=True, add_money=True)
         await message.answer(
             'Отметьте вчерашние дела после этого нажмите кнопку "Отправить"', reply_markup=keyboard)
-        await state.set_state(ClientState.greet)
     else:
-        await handle_new_user(message, state)
+        keyboard = keyboard_builder(inp=daily_tasks, grid=2, chosen=daily_chosen_tasks, add_dell=True)
+        await message.answer(
+            'Добавьте ежедневные дела', reply_markup=keyboard)
+    await state.set_state(ClientState.greet)
 
 
-# async def rebuild_keyboard(state: FSMContext, tasks_type):
-#     user_states_data = await state.get_data()
-#     chosen_tasks = user_states_data[tasks_type]
-#     call = user_states_data['call']
-#     scheduler_arguments = user_states_data['scheduler_arguments']
-#     for itr in chosen_tasks:
-#         del scheduler_arguments[itr]
-#     if len(scheduler_arguments) == 0:
-#         del user_states_data['scheduler_arguments']
-#         await state.set_data(user_states_data)
-#     else:
-#         scheduler_arguments_inp = [key.split('Я напомню вам : ')[1].replace('"', '') for key in
-#                                    user_states_data['scheduler_arguments']]
-#         keyboard = keyboard_builder(inp=scheduler_arguments_inp, add_sent=False)
-#         await bot.edit_message_reply_markup(
-#             chat_id=call.message.chat.id,
-#             message_id=call.message.message_id,
-#             reply_markup=keyboard
-#         )
+async def scheduler_list(message, state, out_message, user_states_data, **kwargs):
+    # загрузка аргументов в database
+    await message.answer(out_message)
+    try:
+        scheduler_arguments = user_states_data['scheduler_arguments']
+        scheduler_arguments[out_message] = {**kwargs}
+    except KeyError:
+        scheduler_arguments = {out_message: {**kwargs}}
+    await edit_database(scheduler_arguments=scheduler_arguments)
+    await state.update_data(scheduler_arguments=scheduler_arguments)
 
 
-# async def scheduler_list(message, state, out_message, user_states_data, **kwargs):
-#     # загрузка аргументов в database
-#     await message.answer(out_message)
-#     try:
-#         scheduler_arguments = user_states_data['scheduler_arguments']
-#         scheduler_arguments[out_message] = {**kwargs}
-#     except KeyError:
-#         scheduler_arguments = {out_message: {**kwargs}}
-#     await edit_database(scheduler_arguments=scheduler_arguments)
-#     await state.update_data(scheduler_arguments=scheduler_arguments)
-#     await start(message, state)
-async def fill_diary(message: Message, state: FSMContext) -> None:
-    user_data = await state.get_data()
-    if user_data:
-        if 'daily_tasks' in user_data:
-            await daily_jobs(message, state)
-        else:
-            await handle_new_user(message, state)
-    else:
-        await start(message, state)
 
-async def start(message: Message, state: FSMContext, flag=True) -> None:
+async def start(state, message=None, daily_tasks=None) -> None:
     data = {}
     user_data = await state.get_data()
+
+    # Проверяем, не был ли уже обработан вход в это состояние
+
     await state.set_state(ClientState.start)
+
+    # Устанавливаем флаг, что обработка начата
+    await state.update_data(start_processed=True)
+
     answer = await create_profile(user_id=message.from_user.id)
     if answer is not None:
 
-        daily_tasks, one_time_jobs, scheduler_arguments, personal_records,\
-            previous_diary, chosen_collected_data, notifications_data = json.loads(answer[1]), json.loads(answer[2]),\
-            json.loads(answer[3]), json.loads(answer[4]), answer[5], json.loads(answer[6]), json.loads(answer[7])
+        user_id, daily_tasks, one_time_jobs, scheduler_arguments, personal_records, \
+            previous_diary, chosen_collected_data, notifications_data, balance, market = answer[0], json.loads(
+            answer[1]), json.loads(answer[2]), \
+            json.loads(answer[3]), json.loads(answer[4]), answer[5], json.loads(answer[6]), json.loads(
+            answer[7]), json.loads(answer[8]), json.loads(answer[9])
         data['daily_tasks'] = daily_tasks
         data['one_time_jobs'] = one_time_jobs
         data['scheduler_arguments'] = scheduler_arguments
-        if personal_records is not None and len(personal_records) != 0:
+        data['balance'] = balance if balance else {'gold': 0, 'rank': 0}
+        gold, rank = data['balance']['gold'], data['balance']['rank']
+        if market:
+            data['market'] = market
+        else:
+            data['market'] = {'purchase_history': {}, 'store': {}}
+        if personal_records:
             data['personal_records'] = personal_records
+        if 'job_id' in user_data:
+            data['job_id'] = user_data['job_id']
         data['previous_diary'] = previous_diary
+        data['message'] = message
         data['notifications_data'] = notifications_data
-        if notifications_data.get('chosen_notifications', []):
+        if notifications_data.get('chosen_notifications') == ['Включено'] and not user_data.get('job_id'):
             hours = notifications_data['hours']
             minutes = notifications_data['minutes']
-            if notifications_data.setdefault('chosen_notifications', []) == ['Включено'] and not user_data.get('job_id', ''):
-                job_id = scheduler.add_job(
-                    fill_diary,
-                    trigger='cron',
-                    hour=hours,
-                    minute=minutes,
-                    args=(message, state))
-                data['job_id'] = job_id.id
+            job_id = scheduler.add_job(
+                daily_jobs,
+                trigger='cron',
+                hour=hours,
+                minute=minutes,
+                args=(message, state))
+            data['job_id'] = job_id.id
+
         data['chosen_collected_data'] = chosen_collected_data
-        user_data = await state.get_data()
-        if 'daily_chosen_tasks' not in user_data:
-            await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[], excel_chosen_tasks=[])
+        if not 'daily_chosen_tasks' in user_data:
+            data.update({'daily_chosen_tasks': []})
+        else: data.update({'daily_chosen_tasks': user_data['daily_chosen_tasks']})
+        data.update({
+            'one_time_chosen_tasks': [],
+            'excel_chosen_tasks': [],
+            'date_chosen_tasks': [],
+            'date_jobs_week_chosen_tasks': [],
+            'chosen_store': [],
+            'backpack_chosen': [],
+        })
         await state.update_data(**data)
-        if not daily_tasks:
-            await handle_new_user(message, state)
-            return
-        path = str(message.from_user.id) + '_Diary.xlsx'
+
+        path = f"{user_id}_Diary.xlsx"
         if os.path.exists(path):
-            keyboard = generate_keyboard(['Вывести Дневник', 'Настройки', 'Скачать Дневник'],
-                                         first_button='Заполнить Дневник')
+            keyboard = generate_keyboard(
+            ['Вывести Дневник', 'Настройки', 'Потратить Золото'],
+            first_button='Заполнить Дневник')
         else:
-            keyboard = generate_keyboard(['Настройки', 'Заполнить Дневник'])
-        await message.answer('Главное меню', reply_markup=keyboard)
+            keyboard = generate_keyboard(['Заполнить Дневник'], last_button='Настройки')
+
+        out_message = f'Ваш баланс: {gold}💰'
+        if personal_records:
+            record_message = "\n".join(f'{k} : {v}' for k, v in personal_records.items())
+            out_message += f'\n\nВаши рекорды:\n{record_message}'
+
+        await message.answer(out_message, reply_markup=keyboard)
+        # Меняем состояние, чтобы избежать повторного входа
         # загрузка данных в scheduler из scheduler_arguments from database
-        # await scheduler_in(data, state)
-    else:
+        await scheduler_in(data, state)
+    elif answer is None or not daily_tasks:
         await handle_new_user(message, state)
 
 
-# async def executing_scheduler_job(state, out_message):
-#     # функция, которая срабатывает, когда срабатывает scheduler
-#     user_states_data = await state.get_data()
-#     scheduler_arguments = user_states_data['scheduler_arguments']
-#     if scheduler_arguments[out_message]['trigger'] == 'date':
-#         del scheduler_arguments[out_message]
-#         await edit_database(scheduler_arguments=scheduler_arguments)
-#     # Я напомню вам : "тес" 14 января 2024
-#     job = normalized(out_message.split(': ')[1]).replace('"', '')
-#     try:
-#         one_time_jobs = user_states_data['one_time_jobs']
-#         one_time_jobs.append(job)
-#         await state.update_data(one_time_jobs=one_time_jobs)
-#         await edit_database(one_time_jobs=one_time_jobs)
-#     except KeyError:
-#         await state.update_data(one_time_jobs=job)
-#         await edit_database(one_time_jobs=job)
+async def executing_scheduler_job(state, out_message):
+    # функция, которая срабатывает, когда срабатывает scheduler
+    user_states_data = await state.get_data()
+    scheduler_arguments = user_states_data['scheduler_arguments']
+    if scheduler_arguments[out_message]['trigger'] == 'date':
+        del scheduler_arguments[out_message]
+        await edit_database(scheduler_arguments=scheduler_arguments)
+    # Я напомню вам : "тес" 14 января 2024
+    job = normalized(out_message.split(': ')[1]).replace('"', '')
+    try:
+        one_time_jobs = user_states_data['one_time_jobs']
+        one_time_jobs = [job] + one_time_jobs
+        await state.update_data(one_time_jobs=one_time_jobs)
+        await edit_database(one_time_jobs=one_time_jobs)
+    except KeyError:
+        await state.update_data(one_time_jobs=job)
+        await edit_database(one_time_jobs=job)
 
 
 async def counter_max_days(data, daily_scores, message, activities, personal_records, output=''):
@@ -381,20 +406,22 @@ async def counter_max_days(data, daily_scores, message, activities, personal_rec
             output += f'Вы не делали эти дела уже столько дней:\n{negative_output}\n\n' \
                       f'Может стоит дать им еще один шанс?'
         if output:
-            sent_message = await message.answer(output)
-            await message.bot.pin_chat_message(message.chat.id, sent_message.message_id)
+            send_message = await message.answer(output)
+            await message.bot.pin_chat_message(message.chat.id, send_message.message_id)
             return personal_records
     else:
         await message.answer('Поздравляю! дневник заполнен')
 
 
-def generate_keyboard(buttons: list, last_button=None, first_button=None):
+def generate_keyboard(buttons: list, last_button=None, first_button=None, chosen=None):
+    #✅️✔️
+
     if last_button is not None:
-        kb = [[types.KeyboardButton(text=button) for button in buttons], [types.KeyboardButton(text=last_button)]]
+        kb = [[types.KeyboardButton(text=f"{button}") for button in buttons], [types.KeyboardButton(text=last_button)]]
     elif first_button is not None:
-        kb = [[types.KeyboardButton(text=first_button)], [types.KeyboardButton(text=button) for button in buttons]]
+        kb = [[types.KeyboardButton(text=first_button)], [types.KeyboardButton(text=f"{button}") for button in buttons]]
     else:
-        kb = [[types.KeyboardButton(text=button) for button in buttons]]
+        kb = [[types.KeyboardButton(text=f"{button}") for button in buttons]]
     keyboard = types.ReplyKeyboardMarkup(
         keyboard=kb,
         resize_keyboard=True,
@@ -412,16 +439,15 @@ async def diary_out(message):
 
     # Отправка заголовка таблицы
     await message.answer(
-        "{} | {} | {} | {} | {} | {} | {} | {}".format("Дата", "Дела за день", "Шаги", "Total sleep", "Deep sleep",
-                                                       "О дне", "My rate", "Total"))
+        "{} | {} | {} | {} | {} | {} ".format("Дата", "Дела за день", "Шаги", "Sleep quality", "О дне", "My rate"))
 
     # Получение последних 7 строк данных
     last_entries = data.tail(7)
 
     # Перебор и отправка последних 7 строк
     for index, row in last_entries.iterrows():
-        message_sheet = "{} | {} | {} | {} | {} | {} | {}".format(row["Дата"], row["Дела за день"], row["Шаги"],
-                            row["Total sleep"], row['Deep sleep'], row['О дне'], row['My rate'])
+        message_sheet = "{} | {} | {} | {} | {}".format(row["Дата"], row["Дела за день"], row["Шаги"],
+                            row["Sleep quality"], row['О дне'], row['My rate'])
 
         # Разделение длинного сообщения на части
         message_parts = [message_sheet[i:i + 4096] for i in range(0, len(message_sheet), 4096)]
