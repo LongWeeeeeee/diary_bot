@@ -74,7 +74,7 @@ async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_
     path = str(message.from_user.id) + '_Diary.xlsx'
     try:
         data = pd.read_excel(path)
-    except FileNotFoundError:
+    except:
         data = pd.DataFrame(columns=['Дата', 'Дела за день', 'Шаги', 'Sleep quality', 'О дне', 'My rate'])
 
     last_row = data.index.max() + 1
@@ -280,17 +280,8 @@ async def scheduler_list(message, state, out_message, user_states_data, **kwargs
 async def start(state, message=None, daily_tasks=None) -> None:
     data = {}
     user_data = await state.get_data()
-
-    # Проверяем, не был ли уже обработан вход в это состояние
-
-    await state.set_state(ClientState.start)
-
-    # Устанавливаем флаг, что обработка начата
-    await state.update_data(start_processed=True)
-
     answer = await create_profile(user_id=message.from_user.id)
     if answer is not None:
-
         user_id, daily_tasks, one_time_jobs, scheduler_arguments, personal_records, \
             previous_diary, chosen_collected_data, notifications_data, balance, market = answer[0], json.loads(
             answer[1]), json.loads(answer[2]), \

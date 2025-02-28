@@ -26,8 +26,12 @@ async def create_profile(user_id):
 
 
 async def edit_database(**kwargs):
-    for name in kwargs:
-        value = json.dumps(kwargs[name], ensure_ascii=False)
-        cur.execute(f'UPDATE profile SET {name} = ?', (value,))
-    db.commit()
+    try:
+        for name in kwargs:
+            value = json.dumps(kwargs[name], ensure_ascii=False)
+            cur.execute(f'UPDATE profile SET {name} = ?', (value,))
+        db.commit()
+    except Exception as e:
+        print(f"Database error: {e}")
+        raise
 

@@ -20,7 +20,7 @@ async def go_to_main_menu(message: Message, state: FSMContext) -> None:
 @dp.message(lambda message: message.text and message.text.lower() == 'вывести дневник')
 async def diary_output(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
-    if len(user_data):
+    if user_data is not None and isinstance(user_data, dict) and len(user_data):
         await diary_out(message)
         await state.set_state(ClientState.greet)
     else:
@@ -42,7 +42,7 @@ async def download_diary(message: Message, state: FSMContext):
             )
         else:
             await message.answer('Дневник еще не создан. Заполните его сначала!')
-    except (IOError, OSError) as e:
+    except:
         await message.answer('Ошибка при отправке файла. Попробуйте позже.')
         # Optionally log the error for debugging
 
@@ -50,7 +50,7 @@ async def download_diary(message: Message, state: FSMContext):
 @dp.message(lambda message: message.text and message.text.lower() == 'настройки')
 async def settings(message: Message, state: FSMContext = None) -> None:
     user_data = await state.get_data()
-    if len(user_data):
+    if user_data is not None and isinstance(user_data, dict) and len(user_data):
         user_data = await state.get_data()
         inp = ['Напоминания', 'Дела в определенную дату', 'Опрашиваемые данные']
 
@@ -74,7 +74,7 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
     data = call.data
     user_states_data = await state.get_data()
     daily_tasks = user_states_data['daily_tasks']
-    daily_chosen_tasks = user_states_data['daily_chosen_tasks']
+    daily_chosen_tasks = user_states_data.get('daily_chosen_tasks', {})
     if data == 'Отправить':
         try:
             await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
@@ -89,7 +89,7 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
                 raise KeyError
 
         except KeyError:
-            collected_data = user_states_data['chosen_collected_data']
+            collected_data = user_states_data.get('chosen_collected_data', {})
             if 'Шаги' in collected_data:
                 await call.message.answer("Сколько сделал шагов?")
                 await state.set_state(ClientState.steps)
@@ -137,17 +137,21 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
         await state.set_state(ClientState.change_daily_jobs_1)
 
     else:
-        daily_tasks = user_states_data['daily_tasks']
-        if data in daily_chosen_tasks:
-            daily_chosen_tasks.remove(data)
-        else:
-            daily_chosen_tasks.append(data)
-        await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
-        keyboard = keyboard_builder(inp=daily_tasks, chosen=daily_chosen_tasks, grid=2, add_money=True)
-        await bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=keyboard)
+        await rebuild_keyboard_with_chosen(data=data, call=call, chosen_tasks=daily_chosen_tasks,
+                                     state=state, tasks=daily_tasks)
+
+
+async def rebuild_keyboard_with_chosen(data, call, chosen_tasks, state, tasks, grid=2, add_money=True):
+    if data in chosen_tasks:
+        chosen_tasks.remove(data)
+    else:
+        chosen_tasks.append(data)
+    await state.update_data(chosen_tasks=chosen_tasks)
+    keyboard = keyboard_builder(inp=tasks, chosen=chosen_tasks, grid=grid, add_money=add_money)
+    await bot.edit_message_reply_markup(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=keyboard)
 
 
 @dp.callback_query(ClientState.one_time_jobs_proceed)
@@ -259,8 +263,8 @@ async def get_valid_number(message: Message, state: FSMContext, field: str, prom
         await message.answer(prompt)
         await state.set_state(next_state)
     except ValueError:
-        await message.answer(f'"{message.text}" должно быть числом. Попробуйте снова.')
-        # State remains unchanged, user retries
+        await message.answer(f'"{message.text}" должно быть числом. Попробуйте снова (например, 12.5).')
+        # Остаёмся в текущем состоянии, ожидая новый ввод
 
 @dp.message(ClientState.steps)
 async def process_steps(message: Message, state: FSMContext):
@@ -328,8 +332,10 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
         if 'previous_diary' in user_states_data:
             previous_diary = user_states_data['previous_diary']
             if previous_diary:
-                await bot.delete_message(message.chat.id, previous_diary)
-                del user_states_data['previous_diary']
+                try:
+                    await bot.delete_message(message.chat.id, previous_diary)
+                    del user_states_data['previous_diary']
+                except: pass
         send_message = await download_diary(message, state)
         await edit_database(previous_diary=send_message.message_id)
         await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[])
@@ -372,7 +378,7 @@ async def my_records(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     if user_data:
         data = await state.get_data()
-        personal_records = data['personal_records']
+        personal_records = data.get('personal_records', {})
         output = [f'{key} : {value}' for key, value in personal_records.items()]
         await message.answer('Ваши рекорды:\n' + '\n'.join(output))
     else:
@@ -482,7 +488,6 @@ async def proceed_backpack(call: types.CallbackQuery, state: FSMContext):
         await edit_database(market=market)
         await start(message=message, state=state)
     else:
-
         if data in backpack_chosen:
             backpack_chosen.remove(data)
         else:
@@ -605,7 +610,11 @@ async def new_market_goods(message, state):
             await message.answer(f'Соблюдайте порядок,{product} должен выглядеть как "товар : стоимость"')
             return
         product_name = product_splited[0]
-        price =product_splited[1]
+        try:
+            price = int(product_splited[1])
+        except ValueError:
+            await message.answer(f'Цена должна быть числом: {product_splited[1]}')
+            return
         num = len(product_name) - 44
         if num > 0:
             await message.answer(
@@ -733,6 +742,15 @@ async def notification_set_date(message, state):
     if len(notification_time) != 2:
         await message.answer(f'{message.text} должно быть датой, например 14:20')
         return
+    try:
+        hours = int(notification_time[0])
+        minutes = int(notification_time[1])
+        if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+            await message.answer('Часы должны быть 0-23, минуты 0-59.')
+            return
+    except ValueError:
+        await message.answer('Часы и минуты должны быть числами.')
+        return
     hours = notification_time[0]
     minutes = notification_time[1]
     notifications_data['hours'] = hours
@@ -760,7 +778,7 @@ async def notification_set_date(message, state):
 async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
 
-    if len(user_data):
+    if user_data is not None and isinstance(user_data, dict) and len(user_data):
         # locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
         data = await state.get_data()
         if 'scheduler_arguments' in data:
@@ -986,8 +1004,11 @@ async def date_jobs_year(message: Message, state: FSMContext) -> None:
 async def date_jobs_once(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
     new_date_jobs = user_states_data['new_date_jobs']
-
-    date = datetime.datetime.strptime(message.text, '%Y-%m-%d')
+    try:
+        date = datetime.datetime.strptime(message.text, '%Y-%m-%d')
+    except ValueError:
+        await message.answer('Неверный формат даты. Используйте ГГГГ-ММ-ДД, например, 2025-12-31.')
+        return
     # Текущие часы и минуты
     # now = datetime.datetime.now()
     # current_time = now.time()
