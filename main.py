@@ -36,10 +36,11 @@ async def download_diary(message: Message, state: FSMContext):
     file_path = f'{message.from_user.id}_Diary.xlsx'
     try:
         if os.path.exists(file_path):
-            await message.answer_document(
+            message = await message.answer_document(
                 document=FSInputFile(file_path),
                 disable_content_type_detection=True
             )
+            return message
         else:
             await message.answer('Дневник еще не создан. Заполните его сначала!')
     except:
@@ -337,7 +338,8 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
                     del user_states_data['previous_diary']
                 except: pass
         send_message = await download_diary(message, state)
-        await edit_database(previous_diary=send_message.message_id)
+        if send_message:
+            await edit_database(previous_diary=send_message.message_id)
         await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[])
         await start(message=message, state=state)
 
@@ -364,6 +366,7 @@ async def collected_data_proceed(call, state):
     else:
         chosen_collected_data = [['Шаги', 'Сон'][data]]
     await state.update_data(chosen_collected_data=chosen_collected_data)
+    await state.update_data(daily_chosen_tasks=[])
     await edit_database(chosen_collected_data=chosen_collected_data)
     keyboard = keyboard_builder(inp=['Шаги', 'Сон'], chosen=chosen_collected_data,
                                 add_dell=False, grid=2)
