@@ -1,3 +1,5 @@
+
+
 import asyncio
 import datetime
 import os
@@ -76,6 +78,13 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
     user_states_data = await state.get_data()
     daily_tasks = user_states_data['daily_tasks']
     daily_chosen_tasks = user_states_data.get('daily_chosen_tasks', {})
+
+    # --- ИЗМЕНЕНИЕ НАЧАЛО ---
+    # Получаем список задач, за которые уже начислено в ЭТОЙ сессии
+    session_accrued_tasks = user_states_data.get('session_accrued_tasks', [])
+    balance = user_states_data.get('balance', {'gold': 0, 'rank': 0}) # Безопасное получение баланса
+    # --- ИЗМЕНЕНИЕ КОНЕЦ ---
+
     if data == 'Отправить':
         try:
             await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
@@ -103,34 +112,86 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
                 await call.message.answer(
                     'Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
                 await state.set_state(ClientState.about_day)
+
+    # --- ИЗМЕНЕНИЕ НАЧАЛО ---
     elif data == 'Начислить':
-        if daily_chosen_tasks:
-            balance = user_states_data['balance']
-            for i in daily_chosen_tasks:
-                balance['gold'] += int(daily_tasks[i])
-            await call.message.answer(f"Ваш баланс: {balance['gold']}")
-            await edit_database(balance=balance)
+        if not daily_chosen_tasks:
+             await call.answer("Сначала выберите выполненные дела.", show_alert=True) # Используем call.answer для коротких уведомлений
+             return
+
+        gold_added_this_time = 0
+        tasks_newly_accrued = [] # Список задач, за которые НАЧИСЛИЛИ именно сейчас
+
+        for task_name in daily_chosen_tasks:
+            # Проверяем, что задача выбрана И за неё еще НЕ НАЧИСЛЯЛИ в этой сессии
+            if task_name not in session_accrued_tasks:
+                try:
+                    task_value = int(daily_tasks.get(task_name, 0)) # Безопасно получаем стоимость
+                    if task_value > 0: # Начисляем только если стоимость положительная
+                        balance['gold'] += task_value
+                        gold_added_this_time += task_value
+                        session_accrued_tasks.append(task_name) # Отмечаем, что за эту задачу начислено
+                        tasks_newly_accrued.append(task_name)
+                except (ValueError, TypeError):
+                    # Обработка случая, если стоимость задачи не является числом
+                    await call.message.answer(f"⚠️ Ошибка значения для задачи: {task_name}")
+                    continue # Пропускаем эту задачу
+
+        if gold_added_this_time > 0:
+            # Обновляем баланс и список начисленных задач в состоянии FSM
+            await state.update_data(balance=balance, session_accrued_tasks=session_accrued_tasks)
+            # Сохраняем ИЗМЕНЕННЫЙ баланс в базу данных
+            await edit_database(user_id=call.from_user.id, balance=balance) # Передаем user_id для точности
+            newly_accrued_str = ', '.join(tasks_newly_accrued)
+            # Уведомляем пользователя о начислении
+            await call.message.answer(f"Начислено {gold_added_this_time}💰 за: {newly_accrued_str}.\nВаш баланс: {balance['gold']}💰", show_alert=True)
+        else:
+            # Уведомляем, если для всех выбранных задач уже было начислено
+            await call.message.answer(f"Для выбранных задач золото уже было начислено в этой сессии.", show_alert=True)
+    # --- ИЗМЕНЕНИЕ КОНЕЦ ---
 
     elif data == 'Удалить':
-        daily_tasks = user_states_data['daily_tasks']
-        for index in daily_chosen_tasks:
-            del daily_tasks[index]
+        # --- ИЗМЕНЕНИЕ НАЧАЛО ---
+        # При удалении задачи, также удаляем ее из списка начисленных в сессии, если она там была
+        tasks_to_remove = daily_chosen_tasks[:] # Копируем список выбранных для удаления
+        successful_deletions = []
+
+        for index in tasks_to_remove: # Используем копию для итерации
+            if index in daily_tasks:
+                 del daily_tasks[index]
+                 successful_deletions.append(index)
+                 # Если задача была в списке начисленных в сессии, удаляем и оттуда
+                 if index in session_accrued_tasks:
+                     session_accrued_tasks.remove(index)
+            # Удаляем из списка выбранных (daily_chosen_tasks) независимо от того, была ли она в daily_tasks
+            # Это важно, если пользователь выбрал удаление, но задача уже была удалена ранее
+            if index in daily_chosen_tasks:
+                 daily_chosen_tasks.remove(index)
+
+        # Обновляем состояние после всех удалений
+        await state.update_data(daily_tasks=daily_tasks,
+                                session_accrued_tasks=session_accrued_tasks,
+                                daily_chosen_tasks=daily_chosen_tasks) # daily_chosen_tasks теперь пуст или содержит неудаленные элементы
+        await edit_database(user_id=call.from_user.id, daily_tasks=daily_tasks) # Сохраняем изменения в БД
+
+        if successful_deletions:
+             await call.answer(f"Удалены задачи: {', '.join(successful_deletions)}", show_alert=True)
+
+        # Перестраиваем клавиатуру
         if daily_tasks:
+            # Передаем обновленный (возможно, пустой) список выбранных задач
             keyboard = keyboard_builder(inp=daily_tasks, grid=2, chosen=daily_chosen_tasks, add_money=True)
             await bot.edit_message_reply_markup(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 reply_markup=keyboard)
-
-            await state.update_data(daily_chosen_tasks=[], daily_tasks=daily_tasks)
         else:
+            # Если список дел пуст, показываем только кнопку "Добавить"
             new_ot_builder = InlineKeyboardBuilder()
             new_ot_builder.button(text="💼Добавить 💼", callback_data="Добавить")
-            await state.set_data(user_states_data)
             await bot.edit_message_text(text='Добавьте список дел', message_id=call.message.message_id,
                                         chat_id=call.message.chat.id, reply_markup=new_ot_builder.as_markup())
-            await state.update_data(daily_chosen_tasks=[])
-        await edit_database(daily_tasks=daily_tasks)
+        # --- ИЗМЕНЕНИЕ КОНЕЦ ---
 
     elif data == 'Добавить':
         await call.message.answer('Введите ежедневные дела, которые вы хотели бы добавить и их стоимость через запятую. Например:\nПодтягивания : 50, гитара : 100')
@@ -138,6 +199,7 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
         await state.set_state(ClientState.change_daily_jobs_1)
 
     else:
+        # Обработка выбора/снятия выбора задачи
         await rebuild_keyboard_with_chosen(data=data, call=call, chosen_tasks=daily_chosen_tasks,
                                      state=state, tasks=daily_tasks)
 
@@ -147,7 +209,8 @@ async def rebuild_keyboard_with_chosen(data, call, chosen_tasks, state, tasks, g
         chosen_tasks.remove(data)
     else:
         chosen_tasks.append(data)
-    await state.update_data(chosen_tasks=chosen_tasks)
+    # Обновляем именно daily_chosen_tasks в состоянии
+    await state.update_data(daily_chosen_tasks=chosen_tasks) # <--- Убедимся, что обновляем правильный ключ
     keyboard = keyboard_builder(inp=tasks, chosen=chosen_tasks, grid=grid, add_money=add_money)
     await bot.edit_message_reply_markup(
         chat_id=call.message.chat.id,

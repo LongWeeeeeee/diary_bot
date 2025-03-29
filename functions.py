@@ -120,7 +120,7 @@ def counter_negative(column, current_word, count=0):
                 if word == current_word:
                     return count
             count += 1
-        else: 
+        else:
             return count
     return count
 
@@ -252,6 +252,11 @@ async def daily_jobs(message, state: FSMContext):
     user_data = await state.get_data()
     daily_tasks = user_data['daily_tasks']
     daily_chosen_tasks = user_data['daily_chosen_tasks']
+
+    # --- ИЗМЕНЕНИЕ НАЧАЛО ---
+    # Инициализируем/сбрасываем список задач, за которые уже начислили в этой сессии
+    await state.update_data(session_accrued_tasks=[])
+    # --- ИЗМЕНЕНИЕ КОНЕЦ ---
 
     if daily_tasks:
         keyboard = keyboard_builder(inp=daily_tasks, grid=2, chosen=daily_chosen_tasks, add_dell=True, add_money=True)
