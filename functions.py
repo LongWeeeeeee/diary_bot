@@ -225,11 +225,18 @@ def keyboard_builder(inp, chosen, grid=1, price_tag=True, add_dell=True, checks=
 
 
 def generate_unique_id_from_args(args_dict):
-    # Сериалзуем аргументы в строку в формате JSON
     copy_args_dict = args_dict.copy()
+    # Extract the second element from the 'args' tuple.
     copy_args_dict['args'] = args_dict['args'][1]
-    serialized_args = json.dumps(copy_args_dict, sort_keys=True)
-    # Используем хэш-функцию для генерации уникального идентификатора
+
+    # Define a converter for non-serializable types
+    def datetime_converter(o):
+        if isinstance(o, datetime):
+            return o.isoformat()
+        raise TypeError(f"Object of type {type(o)} is not JSON serializable")
+
+    serialized_args = json.dumps(copy_args_dict, sort_keys=True, default=datetime_converter)
+    # Generate a unique hash
     return hashlib.sha256(serialized_args.encode()).hexdigest()
 
 

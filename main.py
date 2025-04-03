@@ -999,13 +999,13 @@ async def date_jobs_week(call: types.CallbackQuery, state: FSMContext) -> None:
 
             # global_out_message = f'Я напомню вам : "{new_date_jobs}":\n {(day_to_prefix(day) for day in date_jobs_week_chosen_tasks)} {day}'
     else:
-        data = int(call.data)
+        data = call.data
         date_jobs_week_chosen_tasks = user_states_data['date_jobs_week_chosen_tasks']
 
-        if date_jobs_week_list[data] in date_jobs_week_chosen_tasks:
-            date_jobs_week_chosen_tasks.remove(date_jobs_week_list[data])
+        if data in date_jobs_week_chosen_tasks:
+            date_jobs_week_chosen_tasks.remove(data)
         else:
-            date_jobs_week_chosen_tasks.append(date_jobs_week_list[data])
+            date_jobs_week_chosen_tasks.append(data)
 
         keyboard = keyboard_builder(inp=date_jobs_week_list, chosen=date_jobs_week_chosen_tasks, grid=1, add_dell=False, price_tag=False)
         await bot.edit_message_reply_markup(
@@ -1047,6 +1047,7 @@ async def date_jobs_month(message: Message, state: FSMContext) -> None:
     # minutes = (now + timedelta(minutes=2)).minute
     await scheduler_list(message, state, out_message, user_states_data, day=day_of_month, trigger="cron",
                          args=new_date_jobs)
+    await start(message=message, state=state)
     # if 'call' in user_states_data:
     #     await rebuild_keyboard(state, 'date_chosen_tasks')
 
@@ -1062,6 +1063,7 @@ async def date_jobs_year(message: Message, state: FSMContext) -> None:
     out_message = f'Я напомню вам : "{new_date_jobs}" каждое {date.day} {date.strftime("%B")}'
     await scheduler_list(message, state, out_message, user_states_data, trigger="cron", day=date.day, month=date.month,
                          args=new_date_jobs)
+    await start(message=message, state=state)
     # if 'call' in user_states_data:
     #     await rebuild_keyboard(state, 'date_chosen_tasks')
 
@@ -1090,6 +1092,7 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
         await scheduler_list(message, state, out_message, user_states_data, trigger="date",
                              run_date=date.strftime("%Y-%m-%d %H:%M"),
                              args=new_date_jobs)
+        await start(message=message, state=state)
         # if 'call' in user_states_data:
         #     await rebuild_keyboard(state, 'date_chosen_tasks')
     else:
