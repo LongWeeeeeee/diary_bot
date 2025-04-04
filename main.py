@@ -1,5 +1,5 @@
 
-
+import pytz
 import asyncio
 import datetime
 import os
@@ -12,7 +12,7 @@ from sqlite import database_start, edit_database
 from functions import generate_keyboard, diary_out, add_day_to_excel, normalized,\
     daily_jobs, handle_new_user, keyboard_builder, generate_unique_id_from_args,\
     start, dp, ClientState, bot, negative_responses, remove_markup, scheduler, translate,\
-    day_to_prefix, scheduler_list
+    day_to_prefix, scheduler_list, TARGET_TZ
 
 
 @dp.message(lambda message: message.text and message.text.lower() == 'в главное меню')
@@ -1071,32 +1071,53 @@ async def date_jobs_year(message: Message, state: FSMContext) -> None:
 @dp.message(ClientState.date_jobs_once)
 async def date_jobs_once(message: Message, state: FSMContext) -> None:
     user_states_data = await state.get_data()
-    new_date_jobs = user_states_data['new_date_jobs']
+    new_date_jobs = user_states_data.get('new_date_jobs', 'Напоминание') # Безопасное получение
+
     try:
-        date = datetime.datetime.strptime(message.text, '%Y-%m-%d')
+        # Получаем только дату, время будет текущим
+        user_date_part = datetime.datetime.strptime(message.text, '%Y-%m-%d').date()
     except ValueError:
         await message.answer('Неверный формат даты. Используйте ГГГГ-ММ-ДД, например, 2025-12-31.')
         return
-    # Текущие часы и минуты
-    # now = datetime.datetime.now()
-    # current_time = now.time()
 
-    # # Объединение заданной даты с текущим временем
-    # date = datetime.datetime.combine(date, current_time)
-    #
-    # # Добавление 2 минут
-    # date += datetime.timedelta(minutes=2)
+    # Получаем текущее время в целевом часовом поясе
+    now_aware = datetime.datetime.now(TARGET_TZ)
+    current_time_part = now_aware.time()
 
-    if datetime.datetime.now() < date:
-        out_message = f'Я напомню вам : "{new_date_jobs}" {date.day} {date.strftime("%B")} {date.year}'
-        await scheduler_list(message, state, out_message, user_states_data, trigger="date",
-                             run_date=date.strftime("%Y-%m-%d %H:%M"),
-                             args=new_date_jobs)
-        await start(message=message, state=state)
-        # if 'call' in user_states_data:
-        #     await rebuild_keyboard(state, 'date_chosen_tasks')
+    # Комбинируем дату от пользователя и текущее время (получаем наивный datetime)
+    naive_dt = datetime.datetime.combine(user_date_part, datetime.time(0, 0))
+
+    # Делаем datetime "знающим" о часовом поясе (локализуем)
+    # Важно: localize используется для наивных dt, которые УЖЕ представляют время в этом поясе
+    scheduled_dt_aware = TARGET_TZ.localize(naive_dt)
+
+    # Добавляем 2 минуты
+    # scheduled_dt_aware += datetime.timedelta(minutes=2)
+
+    # Проверяем, что рассчитанное время > текущего времени (оба aware)
+    if now_aware < scheduled_dt_aware:
+        # Форматируем сообщение для пользователя (можно добавить время)
+        # Для русских месяцев лучше использовать locale или ручной маппинг
+        month_ru = ["Января", "Февраля", "Марта", "Апреля", "Мая", "Июня", "Июля", "Августа", "Сентября", "Октября", "Ноября", "Декабря"][scheduled_dt_aware.month - 1]
+        out_message = f'Я напомню вам : "{new_date_jobs}" {scheduled_dt_aware.day} {month_ru} {scheduled_dt_aware.year} в {scheduled_dt_aware.strftime("%H:%M")}'
+
+        # Передаем задачу в планировщик
+        # Убедитесь, что функция scheduler_list или та, что вызывает scheduler.add_job,
+        # принимает и использует aware datetime объект.
+        # НЕ передавайте строку strftime!
+        try:
+            await scheduler_list(message, state, out_message, user_states_data, trigger="date",
+                                 run_date=scheduled_dt_aware.strftime("%Y-%m-%d %H:%M"),
+                                 args=new_date_jobs)
+
+        except Exception as e:
+             await message.answer("Не удалось запланировать напоминание.")
+
+        await start(message=message, state=state) # Возврат в начальное состояние
+
     else:
-        await message.answer(f'{    message.text} меньше текущей даты')
+        # Сообщаем пользователю точное время, которое не подошло
+        await message.answer(f'Рассчитанное время {scheduled_dt_aware.strftime("%Y-%m-%d %H:%M %Z%z")} уже в прошлом.')
 
 
 @dp.message(lambda message: message.text and message.text.lower() == 'добавить разовые дела', ClientState.settings)
@@ -1212,6 +1233,7 @@ async def handle_message(message: Message, state: FSMContext):
 
 async def main():
     scheduler.start()
+
     await database_start()
     await dp.start_polling(bot)
     await scheduler.shutdown()

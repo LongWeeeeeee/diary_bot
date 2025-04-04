@@ -18,12 +18,14 @@ from aiogram import types
 import hashlib
 from datetime import timedelta, datetime
 from sqlite import edit_database
+import pytz
 
 os.environ['TZ'] = 'Etc/UTC'
 
 
 scheduler = AsyncIOScheduler()
 scheduler.configure(timezone='Europe/Moscow')
+TARGET_TZ = pytz.timezone('Europe/Moscow')
 class ClientState(StatesGroup):
     greet = State()
     start = State()
@@ -372,7 +374,7 @@ async def executing_scheduler_job(state, out_message):
     job = normalized(out_message.split(': ')[1]).replace('"', '')
     try:
         one_time_jobs = user_states_data['one_time_jobs']
-        one_time_jobs = [job] + one_time_jobs
+        one_time_jobs[job] = 300
         await state.update_data(one_time_jobs=one_time_jobs)
         await edit_database(one_time_jobs=one_time_jobs)
     except KeyError:
