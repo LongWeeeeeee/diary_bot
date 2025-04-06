@@ -848,8 +848,8 @@ async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
         # locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
         data = await state.get_data()
         if 'scheduler_arguments' in data:
-            output = [key.split('Я напомню вам : ')[1].replace('"', '') for key in data['scheduler_arguments'].keys()]
-            keyboard = keyboard_builder(inp=output, chosen=[], price_tag=False)
+            output = {key.split('Я напомню вам : ')[1].replace('"', ''):300 for key in data['scheduler_arguments'].keys()}
+            keyboard = keyboard_builder(inp=output, chosen=[])
             await message.answer('Ваши задачи', reply_markup=keyboard)
             await message.answer(
                 'Для удаления выберите интересующие вас дела и нажмите "Удалить"\n'
@@ -919,15 +919,15 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         await state.set_state(ClientState.date_jobs_1)
 
     else:
-        data = int(data)
+        data = data
         user_states_data = await state.get_data()
-        scheduler_arguments = [key.split('Я напомню вам : ')[1].replace('"', '')
-                               for key in user_states_data['scheduler_arguments'].keys()]
+        scheduler_arguments = {key.split('Я напомню вам : ')[1].replace('"', ''):300
+                               for key in user_states_data['scheduler_arguments'].keys()}
         date_chosen_tasks = user_states_data['date_chosen_tasks']
-        if scheduler_arguments[data] in date_chosen_tasks:
-            date_chosen_tasks.remove(scheduler_arguments[data])
+        if data in date_chosen_tasks:
+            date_chosen_tasks.remove(data)
         else:
-            date_chosen_tasks.append(scheduler_arguments[data])
+            date_chosen_tasks.append(data)
         await state.update_data(date_chosen_tasks=date_chosen_tasks)
         keyboard = keyboard_builder(inp=scheduler_arguments, chosen=date_chosen_tasks)
         await bot.edit_message_reply_markup(
