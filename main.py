@@ -403,7 +403,9 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
         send_message = await download_diary(message, state)
         if send_message:
             await edit_database(previous_diary=send_message.message_id)
-        await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[])
+        await state.update_data(daily_chosen_tasks=[])
+        await state.update_data(one_time_chosen_tasks=[])
+        await state.update_data(session_accrued_tasks=[])
         await start(message=message, state=state)
 
 @dp.message(lambda message: message.text and message.text.lower() == 'опрашиваемые данные', ClientState.settings)

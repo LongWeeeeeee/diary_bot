@@ -259,13 +259,11 @@ async def handle_new_user(message: Message, state: FSMContext):
 @dp.message(lambda message: message.text and message.text.lower() == 'заполнить дневник')
 async def daily_jobs(message, state: FSMContext):
     user_data = await state.get_data()
-    daily_tasks = user_data['daily_tasks']
+    daily_tasks = user_data.get('daily_tasks', [])
     daily_chosen_tasks = user_data['daily_chosen_tasks']
 
     # --- ИЗМЕНЕНИЕ НАЧАЛО ---
     # Инициализируем/сбрасываем список задач, за которые уже начислили в этой сессии
-    await state.update_data(session_accrued_tasks=[])
-    # --- ИЗМЕНЕНИЕ КОНЕЦ ---
 
     if daily_tasks:
         keyboard = keyboard_builder(inp=daily_tasks, grid=2, chosen=daily_chosen_tasks, add_dell=True, add_money=True)
@@ -317,6 +315,7 @@ async def start(state, message=None, daily_tasks=None) -> None:
         data['previous_diary'] = previous_diary
         data['message'] = message
         data['notifications_data'] = notifications_data
+        data['session_accrued_tasks'] = user_data.get('session_accrued_tasks', [])
         if notifications_data.get('chosen_notifications') == ['Включено'] and not user_data.get('job_id'):
             hours = notifications_data['hours']
             minutes = notifications_data['minutes']
@@ -329,9 +328,7 @@ async def start(state, message=None, daily_tasks=None) -> None:
             data['job_id'] = job_id.id
 
         data['chosen_collected_data'] = chosen_collected_data
-        if not 'daily_chosen_tasks' in user_data:
-            data.update({'daily_chosen_tasks': []})
-        else: data.update({'daily_chosen_tasks': user_data['daily_chosen_tasks']})
+        data['daily_chosen_tasks'] = user_data.get('daily_chosen_tasks', [])
         data.update({
             'one_time_chosen_tasks': [],
             'excel_chosen_tasks': [],
