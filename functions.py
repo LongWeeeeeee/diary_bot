@@ -182,14 +182,14 @@ async def scheduler_in(data, state):
 def keyboard_builder(inp, chosen, grid=1, price_tag=True, add_dell=True, checks=False, last_button="🚀Отправить 🚀", add_money=False):
 
     date_builder = InlineKeyboardBuilder()
-    for job in inp:
+    for index, job in enumerate(inp):
         if checks:
-            date_builder.button(text=f"{job} ✔️", callback_data=f"{job}")
+            date_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
         elif price_tag == False:
             if job in chosen:
-                date_builder.button(text=f"{job} ✅️", callback_data=f"{job}")
+                date_builder.button(text=f"{job} ✅️", callback_data=f"{index}")
             else:
-                date_builder.button(text=f"{job} ✔️", callback_data=f"{job}")
+                date_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
         else:
             product_name = job
             price = inp[job]
@@ -197,12 +197,12 @@ def keyboard_builder(inp, chosen, grid=1, price_tag=True, add_dell=True, checks=
                 for date in price:
                     if price[date]['used'] is False:
                         price = price[date]['price']
-                        date_builder.button(text=f"{price}💰 {product_name} ✔️", callback_data=f"{date}")
+                        date_builder.button(text=f"{price}💰 {product_name} ✔️", callback_data=f"{index}")
             else:
-                if product_name in chosen:
-                    date_builder.button(text=f"{price}💰 {product_name} ✅️", callback_data=f"{product_name}")
+                if str(index) in chosen:
+                    date_builder.button(text=f"{price}💰 {product_name} ✅️", callback_data=f"{index}")
                 else:
-                    date_builder.button(text=f"{price}💰 {product_name} ✔️", callback_data=f"{product_name}")
+                    date_builder.button(text=f"{price}💰 {product_name} ✔️", callback_data=f"{index}")
 
     date_builder.adjust(grid, grid)
     d_new_builder = InlineKeyboardBuilder()
