@@ -235,8 +235,10 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
             excel_chosen_tasks += one_time_chosen_tasks
             await state.update_data(excel_chosen_tasks=one_time_chosen_tasks)
             user_states_data['excel_chosen_tasks'] = one_time_chosen_tasks
-            for itr in one_time_chosen_tasks:
-                user_states_data['balance']['gold'] += int(one_time_jobs[itr])
+            one_time_jobs_copy = one_time_jobs.copy()
+            for index, itr in enumerate(one_time_jobs_copy):
+                if str(index) in one_time_chosen_tasks:
+                    user_states_data['balance']['gold'] += int(one_time_jobs[itr])
                 del one_time_jobs[itr]
             await edit_database(balance=balance)
             await state.update_data(balance=balance)
