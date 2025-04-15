@@ -383,10 +383,13 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
     personal_rate = int(message.text)
     if 0 <= personal_rate <= 10:
         user_states_data = await state.get_data()
+        daily_tasks = user_states_data['daily_tasks']
+        activities = [x for index, x in enumerate(daily_tasks)
+                      if str(index) in user_states_data['daily_chosen_tasks']]
         data = {
-            'daily_tasks': user_states_data['daily_tasks'],
+            'daily_tasks': daily_tasks,
             'date': datetime.datetime.now(),
-            'activities': user_states_data['daily_chosen_tasks'],
+            'activities': activities,
             'user_message': user_states_data['user_message'],
             'sleep_quality': user_states_data['sleep_quality'],
             'my_steps': user_states_data['my_steps'],
@@ -408,6 +411,7 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
         await state.update_data(daily_chosen_tasks=[])
         await state.update_data(one_time_chosen_tasks=[])
         await state.update_data(session_accrued_tasks=[])
+        await state.set_state()
         await start(message=message, state=state)
 
 @dp.message(lambda message: message.text and message.text.lower() == 'опрашиваемые данные', ClientState.settings)
@@ -596,18 +600,17 @@ async def spend_money(gold, market, chosen_store, call):
     formatted_date = now.strftime("%Y-%-m-%-d")
     purchased_products = []
     if chosen_store:
-        for i in store:
+        for index, i in enumerate(store):
             price = int(store[i])
             product = i
-            for foo in chosen_store:
-                if foo == product:
-                    if gold >= price:
-                        gold -= price
-                        market['purchase_history'].setdefault(product, []).append({'price': price, 'time': formatted_date, 'used': False})
-                        purchased_products.append(product)
-                    else:
-                        await call.message.answer('Недостаточно золота на балансе! Выполняйте задачи, чтобы его заработать')
-                        return
+            if str(index) in chosen_store:
+                if gold >= price:
+                    gold -= price
+                    market['purchase_history'].setdefault(product, []).append({'price': price, 'time': formatted_date, 'used': False})
+                    purchased_products.append(product)
+                else:
+                    await call.message.answer('Недостаточно золота на балансе!\n Выполняйте задачи, чтобы его заработать')
+                    return
     return purchased_products, gold
 
 
