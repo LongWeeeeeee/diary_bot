@@ -122,7 +122,9 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
         gold_added_this_time = 0
         tasks_newly_accrued = [] # Список задач, за которые НАЧИСЛИЛИ именно сейчас
 
-        for task_name in daily_chosen_tasks:
+        for index, task_name in enumerate(daily_tasks):
+            if str(index) not in daily_chosen_tasks:
+                continue
             # Проверяем, что задача выбрана И за неё еще НЕ НАЧИСЛЯЛИ в этой сессии
             if task_name not in session_accrued_tasks:
                 try:
