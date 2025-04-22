@@ -167,8 +167,9 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
                      session_accrued_tasks.remove(index)
             # Удаляем из списка выбранных (daily_chosen_tasks) независимо от того, была ли она в daily_tasks
             # Это важно, если пользователь выбрал удаление, но задача уже была удалена ранее
-            if index in daily_chosen_tasks:
-                 daily_chosen_tasks.remove(index)
+            for index, job in enumerate(daily_tasks.copy()):
+                if str(index) in daily_chosen_tasks:
+                 del daily_tasks[job]
 
         # Обновляем состояние после всех удалений
         await state.update_data(daily_tasks=daily_tasks,
@@ -278,9 +279,9 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
                 'Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
             await state.set_state(ClientState.about_day)
     elif data == 'Удалить':
-        for index in one_time_chosen_tasks:
-            if index in one_time_jobs:
-                del one_time_jobs[index]
+        for index, job in enumerate(one_time_jobs.copy()):
+            if str(index) in one_time_chosen_tasks:
+                del one_time_jobs[job]
         if len(one_time_jobs):
             keyboard = keyboard_builder(inp=one_time_jobs, grid=1, chosen=one_time_chosen_tasks)
             await bot.edit_message_reply_markup(
@@ -398,8 +399,9 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
         }
         if 'personal_records' in user_states_data:
             data['personal_records'] = user_states_data['personal_records']
-        personal_records = await add_day_to_excel(message=message, personal_rate=personal_rate, **data)
+        personal_records, daily_tasks = await add_day_to_excel(message=message, personal_rate=personal_rate, **data)
         await edit_database(personal_records=personal_records)
+        await edit_database(daily_tasks=daily_tasks)
         if 'previous_diary' in user_states_data:
             previous_diary = user_states_data['previous_diary']
             if previous_diary:
@@ -610,10 +612,11 @@ async def spend_money(gold, market, chosen_store, call):
                     gold -= price
                     market['purchase_history'].setdefault(product, []).append({'price': price, 'time': formatted_date, 'used': False})
                     purchased_products.append(product)
+                    market['store'][i] = int(market['store'][i]) * 1.05
                 else:
                     await call.message.answer('Недостаточно золота на балансе!\n Выполняйте задачи, чтобы его заработать')
                     return
-    return purchased_products, gold
+    return purchased_products, gold, market
 
 
 @dp.callback_query(ClientState.market)
@@ -644,7 +647,7 @@ async def proceed_market(call: types.CallbackQuery, state: FSMContext):
     elif data == 'Потратить':
         answer = await spend_money(gold, market, chosen_store, call)
         if answer:
-            purchased_products, gold = answer
+            purchased_products, gold, market = answer
             balance['gold'] = gold
             purchased_products_out = "\n".join(purchased_products)
             await edit_database(market=market)

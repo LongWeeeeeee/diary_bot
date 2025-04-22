@@ -106,24 +106,20 @@ async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_
         worksheet.set_column(f'{row}:{row}', 10, cell_format_middle)  # Установить ширину столбца A равной 20
 
     writer._save()
-    if not len(activities):
-        await message.answer('Поздравляю! дневник заполнен')
-    else:
-        personal_records = await counter_max_days(data=data, daily_scores=daily_tasks, message=message,
-                                                  activities=activities, personal_records=personal_records)
-        return personal_records
+    personal_records, daily_scores = await counter_max_days(data=data, daily_scores=daily_tasks, message=message,
+                                              activities=activities, personal_records=personal_records)
+    return personal_records, daily_scores
 
 
 def counter_negative(column, current_word, count=0):
     for words in column.iloc[::-1]:
-        if not isinstance(words, float):
+        try:
             split_words = words.split(', ')
             for word in split_words:
                 if word == current_word:
                     return count
-            count += 1
-        else:
-            return count
+        except: pass
+        count += 1
     return count
 
 
@@ -196,13 +192,13 @@ def keyboard_builder(inp, chosen, grid=1, price_tag=True, add_dell=True, checks=
             if type(price) == dict:
                 for date in price:
                     if price[date]['used'] is False:
-                        price = price[date]['price']
+                        price = int(price[date]['price'])
                         date_builder.button(text=f"{price}💰 {product_name} ✔️", callback_data=f"{index}")
             else:
                 if str(index) in chosen:
-                    date_builder.button(text=f"{price}💰 {product_name} ✅️", callback_data=f"{index}")
+                    date_builder.button(text=f"{int(price)}💰 {product_name} ✅️", callback_data=f"{index}")
                 else:
-                    date_builder.button(text=f"{price}💰 {product_name} ✔️", callback_data=f"{index}")
+                    date_builder.button(text=f"{int(price)}💰 {product_name} ✔️", callback_data=f"{index}")
 
     date_builder.adjust(grid, grid)
     d_new_builder = InlineKeyboardBuilder()
@@ -403,6 +399,8 @@ async def counter_max_days(data, daily_scores, message, activities, personal_rec
         if positive_output:
             output += f'Поздравляю! Вы соблюдаете эти дела уже столько дней:\n{positive_output}'
         if negative_output:
+            for i in negative_dict:
+                daily_scores[i] = int(daily_scores[i])*1.03
             if output != '':
                 output += '\n\n'
             output += f'Вы не делали эти дела уже столько дней:\n{negative_output}\n\n' \
@@ -410,7 +408,7 @@ async def counter_max_days(data, daily_scores, message, activities, personal_rec
         if output:
             send_message = await message.answer(output)
             await message.bot.pin_chat_message(message.chat.id, send_message.message_id)
-            return personal_records
+            return personal_records, daily_scores
     else:
         await message.answer('Поздравляю! дневник заполнен')
 
