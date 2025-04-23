@@ -399,8 +399,9 @@ async def counter_max_days(data, daily_scores, message, activities, personal_rec
         if positive_output:
             output += f'Поздравляю! Вы соблюдаете эти дела уже столько дней:\n{positive_output}'
         if negative_output:
-            for i in negative_dict:
-                daily_scores[i] = int(daily_scores[i])*1.03
+            for name, value in negative_dict.items():
+                if value:
+                    daily_scores[name] = int(daily_scores[name])*1.03
             if output != '':
                 output += '\n\n'
             output += f'Вы не делали эти дела уже столько дней:\n{negative_output}\n\n' \
