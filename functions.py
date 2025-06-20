@@ -106,9 +106,11 @@ async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_
         worksheet.set_column(f'{row}:{row}', 10, cell_format_middle)  # Установить ширину столбца A равной 20
 
     writer._save()
-    personal_records, daily_scores = await counter_max_days(data=data, daily_scores=daily_tasks, message=message,
+    answer = await counter_max_days(data=data, daily_scores=daily_tasks, message=message,
                                               activities=activities, personal_records=personal_records)
-    return personal_records, daily_scores
+    if answer is not None:
+        personal_records, daily_scores = answer
+        return personal_records, daily_scores
 
 
 def counter_negative(column, current_word, count=0):
