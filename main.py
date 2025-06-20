@@ -399,9 +399,10 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
         }
         if 'personal_records' in user_states_data:
             data['personal_records'] = user_states_data['personal_records']
-        personal_records, daily_tasks = await add_day_to_excel(message=message, personal_rate=personal_rate, **data)
-        await edit_database(personal_records=personal_records)
-        await edit_database(daily_tasks=daily_tasks)
+        answer = await add_day_to_excel(message=message, personal_rate=personal_rate, **data)
+        if answer:
+            personal_records = answer
+            await edit_database(personal_records=personal_records)
         if 'previous_diary' in user_states_data:
             previous_diary = user_states_data['previous_diary']
             if previous_diary:

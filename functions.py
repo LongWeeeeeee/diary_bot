@@ -106,11 +106,11 @@ async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_
         worksheet.set_column(f'{row}:{row}', 10, cell_format_middle)  # Установить ширину столбца A равной 20
 
     writer._save()
-    answer = await counter_max_days(data=data, daily_scores=daily_tasks, message=message,
+    answer = await counter_max_days(data=data, daily_tasks=daily_tasks, message=message,
                                               activities=activities, personal_records=personal_records)
     if answer is not None:
-        personal_records, daily_scores = answer
-        return personal_records, daily_scores
+        personal_records = answer
+        return personal_records
 
 
 def counter_negative(column, current_word, count=0):
@@ -377,11 +377,11 @@ async def executing_scheduler_job(state, out_message):
         await edit_database(one_time_jobs=job)
 
 
-async def counter_max_days(data, daily_scores, message, activities, personal_records, output=''):
+async def counter_max_days(data, daily_tasks, message, activities, personal_records, output=''):
     column = data['Дела за день']
     if column.any():
         negative_dict = {current_word: counter_negative(current_word=current_word, column=column) for current_word in
-                         daily_scores}
+                         daily_tasks}
         positive_dict = {current_word: counter_positive(current_word=current_word, column=column) for current_word in
                          activities}
         negative_output = '\n'.join(
@@ -403,7 +403,7 @@ async def counter_max_days(data, daily_scores, message, activities, personal_rec
         if negative_output:
             for name, value in negative_dict.items():
                 if value:
-                    daily_scores[name] = int(daily_scores[name])*1.03
+                    daily_tasks[name] = int(daily_tasks[name])*1.03
             if output != '':
                 output += '\n\n'
             output += f'Вы не делали эти дела уже столько дней:\n{negative_output}\n\n' \
@@ -411,7 +411,7 @@ async def counter_max_days(data, daily_scores, message, activities, personal_rec
         if output:
             send_message = await message.answer(output)
             await message.bot.pin_chat_message(message.chat.id, send_message.message_id)
-            return personal_records, daily_scores
+            return personal_records
     else:
         await message.answer('Поздравляю! дневник заполнен')
 
