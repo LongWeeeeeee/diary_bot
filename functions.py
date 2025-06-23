@@ -2,6 +2,7 @@ import re
 import json
 import logging
 import os
+import requests
 
 
 from aiogram import Bot, Dispatcher
@@ -414,6 +415,7 @@ async def counter_max_days(data, daily_tasks, message, activities, personal_reco
             return personal_records
     else:
         await message.answer('Поздравляю! дневник заполнен')
+
 
 
 def generate_keyboard(buttons: list, last_button=None, first_button=None, chosen=None):

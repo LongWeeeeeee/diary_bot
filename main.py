@@ -1,4 +1,6 @@
-
+from aiogram.types.error_event import ErrorEvent
+import io # <--- Добавьте этот импорт в начало вашего файла
+from aiogram.types import BufferedInputFile
 import asyncio
 import datetime
 import os
@@ -1015,6 +1017,7 @@ async def date_jobs_week(call: types.CallbackQuery, state: FSMContext) -> None:
             # global_out_message = f'Я напомню вам : "{new_date_jobs}":\n {(day_to_prefix(day) for day in date_jobs_week_chosen_tasks)} {day}'
     else:
         data = call.data
+        data = date_jobs_week_list[int(data)]
         date_jobs_week_chosen_tasks = user_states_data['date_jobs_week_chosen_tasks']
 
         if data in date_jobs_week_chosen_tasks:
@@ -1246,64 +1249,51 @@ async def handle_message(message: Message, state: FSMContext):
     await start(message=message, state=state)
 
 
-async def on_error_handler(update: types.Update, exception: Exception):
+async def on_error_handler(event: ErrorEvent):
     """
     Обработчик для перехвата и отправки ошибок администратору.
+    Отправляет traceback отдельным файлом.
     """
-    # Формируем полный traceback ошибки
-    tb_str = traceback.format_exc()
+    logging.error(f"Произошла ошибка в боте!", exc_info=event.exception)
 
-    # Формируем сообщение для администратора
-    # Используем HTML-разметку для лучшей читаемости
-    error_message = (
+    # Формируем полный traceback
+    tb_str = "".join(traceback.format_exception(type(event.exception), event.exception, event.exception.__traceback__))
+
+    # Формируем краткое сообщение для администратора
+    short_error_message = (
         f"<b>❗️ Произошла ошибка!</b>\n\n"
-        f"<b>Тип ошибки:</b> {type(exception).__name__}\n"
-        f"<b>Текст ошибки:</b> {exception}\n\n"
-        f"<b>Полный traceback:</b>\n"
-        f"<pre><code>{tb_str}</code></pre>\n\n"
-        f"<b>Update, вызвавший ошибку:</b>\n"
-        f"<pre><code>{update.model_dump_json(indent=2, exclude_none=True)}</code></pre>"
+        f"<b>Тип:</b> {type(event.exception).__name__}\n"
+        f"<b>Текст:</b> {event.exception}\n\n"
+        f"Полный traceback и данные Update в прикрепленных файлах."
     )
 
-    # Логируем ошибку в консоль для отладки
-    logging.error(f"Произошла ошибка: {exception}\n{tb_str}")
+    # Создаем файлы в памяти
+    traceback_file = BufferedInputFile(tb_str.encode('utf-8'), filename="traceback.txt")
+    update_file = BufferedInputFile(
+        event.update.model_dump_json(indent=2, exclude_none=True).encode('utf-8'),
+        filename="update.json"
+    )
 
     try:
-        # Отправляем сообщение об ошибке администратору
-        # Проверяем длину сообщения, так как Telegram имеет лимит
-        if len(error_message) > 4096:
-            # Если сообщение слишком длинное, отправляем его частями
-            for i in range(0, len(error_message), 4096):
-                await bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=error_message[i:i + 4096],
-                    parse_mode='HTML'
-                )
-        else:
-            await bot.send_message(
-                chat_id=ADMIN_ID,
-                text=error_message,
-                parse_mode='HTML'
-            )
+        # Сначала отправляем краткое сообщение
+        await bot.send_message(
+            chat_id=ADMIN_ID,
+            text=short_error_message,
+            parse_mode='HTML'
+        )
+        # Затем отправляем файлы
+        await bot.send_document(chat_id=ADMIN_ID, document=traceback_file)
 
-        # (Опционально) Можно также отправить пользователю сообщение о том, что что-то пошло не так
-        user_chat_id = None
-        if update.message:
-            user_chat_id = update.message.chat.id
-        elif update.callback_query:
-            user_chat_id = update.callback_query.message.chat.id
-
+        # (Опционально) Отправляем пользователю сообщение
+        user_chat_id = event.update.message.chat.id if event.update.message else event.update.callback_query.message.chat.id
         if user_chat_id:
-            await bot.send_message(
+             await bot.send_message(
                 chat_id=user_chat_id,
                 text="😕 Ой, что-то пошло не так. Я уже сообщил разработчику о проблеме. Пожалуйста, попробуйте снова позже."
-            )
+             )
 
     except Exception as e:
-        # Если даже отправка сообщения не удалась, логируем это
         logging.error(f"Критическая ошибка: не удалось отправить уведомление об ошибке. Причина: {e}")
-
-
 
 async def main():
     # --- ДОБАВЬТЕ ЭТО ---
