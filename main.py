@@ -1,8 +1,10 @@
 
-import pytz
 import asyncio
 import datetime
 import os
+import logging # <--- ДОБАВИТЬ
+import traceback
+from keys import ADMIN_ID
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile
@@ -10,7 +12,7 @@ from aiogram.types import Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlite import database_start, edit_database
 from functions import generate_keyboard, diary_out, add_day_to_excel, normalized,\
-    daily_jobs, handle_new_user, keyboard_builder, generate_unique_id_from_args,\
+    daily_jobs, keyboard_builder, generate_unique_id_from_args,\
     start, dp, ClientState, bot, negative_responses, remove_markup, scheduler, translate,\
     day_to_prefix, scheduler_list, TARGET_TZ
 
@@ -1244,7 +1246,78 @@ async def handle_message(message: Message, state: FSMContext):
     await start(message=message, state=state)
 
 
+async def on_error_handler(update: types.Update, exception: Exception):
+    """
+    Обработчик для перехвата и отправки ошибок администратору.
+    """
+    # Формируем полный traceback ошибки
+    tb_str = traceback.format_exc()
+
+    # Формируем сообщение для администратора
+    # Используем HTML-разметку для лучшей читаемости
+    error_message = (
+        f"<b>❗️ Произошла ошибка!</b>\n\n"
+        f"<b>Тип ошибки:</b> {type(exception).__name__}\n"
+        f"<b>Текст ошибки:</b> {exception}\n\n"
+        f"<b>Полный traceback:</b>\n"
+        f"<pre><code>{tb_str}</code></pre>\n\n"
+        f"<b>Update, вызвавший ошибку:</b>\n"
+        f"<pre><code>{update.model_dump_json(indent=2, exclude_none=True)}</code></pre>"
+    )
+
+    # Логируем ошибку в консоль для отладки
+    logging.error(f"Произошла ошибка: {exception}\n{tb_str}")
+
+    try:
+        # Отправляем сообщение об ошибке администратору
+        # Проверяем длину сообщения, так как Telegram имеет лимит
+        if len(error_message) > 4096:
+            # Если сообщение слишком длинное, отправляем его частями
+            for i in range(0, len(error_message), 4096):
+                await bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=error_message[i:i + 4096],
+                    parse_mode='HTML'
+                )
+        else:
+            await bot.send_message(
+                chat_id=ADMIN_ID,
+                text=error_message,
+                parse_mode='HTML'
+            )
+
+        # (Опционально) Можно также отправить пользователю сообщение о том, что что-то пошло не так
+        user_chat_id = None
+        if update.message:
+            user_chat_id = update.message.chat.id
+        elif update.callback_query:
+            user_chat_id = update.callback_query.message.chat.id
+
+        if user_chat_id:
+            await bot.send_message(
+                chat_id=user_chat_id,
+                text="😕 Ой, что-то пошло не так. Я уже сообщил разработчику о проблеме. Пожалуйста, попробуйте снова позже."
+            )
+
+    except Exception as e:
+        # Если даже отправка сообщения не удалась, логируем это
+        logging.error(f"Критическая ошибка: не удалось отправить уведомление об ошибке. Причина: {e}")
+
+
+
 async def main():
+    # --- ДОБАВЬТЕ ЭТО ---
+    # Настройка логирования для вывода информации в консоль
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+    )
+
+    # Регистрация обработчика ошибок
+    dp.error.register(on_error_handler)
+    logging.info("Обработчик ошибок зарегистрирован.")
+    # --------------------
+
     scheduler.start()
 
     await database_start()
