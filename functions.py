@@ -2,7 +2,6 @@ import re
 import json
 import logging
 import os
-import requests
 
 
 from aiogram import Bot, Dispatcher
