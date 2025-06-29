@@ -114,7 +114,7 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
             else:
                 await state.update_data(my_steps='-', sleep_quality='-')
                 await call.message.answer(
-                    'Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
+                    'Подробно расскажи про свой день. Выгрузи все эмоции которые ты сегодня пережил и события связанные с ними. Это поможет тебе лучше заснуть')
                 await state.set_state(ClientState.about_day)
 
     # --- ИЗМЕНЕНИЕ НАЧАЛО ---
@@ -231,45 +231,39 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
     data = call.data
     user_states_data = await state.get_data()
     balance = user_states_data['balance']
-    one_time_chosen_tasks = user_states_data['one_time_chosen_tasks']
-    if 'one_time_jobs' in user_states_data:
-        one_time_jobs = user_states_data['one_time_jobs']
-    else:
-        one_time_jobs = []
-    excel_chosen_tasks = user_states_data['excel_chosen_tasks']
+    one_time_chosen_tasks = user_states_data.get('one_time_chosen_tasks', [])
+    one_time_jobs = user_states_data.get('one_time_jobs', {})
+
     if data == 'Отправить':
-        if len(one_time_chosen_tasks) != 0:
-            excel_chosen_tasks += one_time_chosen_tasks
-            await state.update_data(excel_chosen_tasks=one_time_chosen_tasks)
-            user_states_data['excel_chosen_tasks'] = one_time_chosen_tasks
-            one_time_jobs_copy = one_time_jobs.copy()
-            for index, itr in enumerate(one_time_jobs_copy):
-                if str(index) in one_time_chosen_tasks:
-                    user_states_data['balance']['gold'] += int(one_time_jobs[itr])
-                del one_time_jobs[itr]
-            await edit_database(balance=balance)
-            await state.update_data(balance=balance)
-            if not len(one_time_jobs):
-                await bot.delete_message(
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    )
-                del user_states_data['one_time_jobs']
-                await state.set_data(user_states_data)
+        if one_time_chosen_tasks:
+            # Создаем список ключей (названий дел) для безопасного доступа по индексу
+            job_keys = list(one_time_jobs.keys())
+            completed_jobs_names = []
 
-            else:
-                keyboard = keyboard_builder(inp=one_time_jobs, chosen=one_time_chosen_tasks)
-                await bot.edit_message_reply_markup(
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    reply_markup=keyboard
-                )
-                await state.update_data(one_time_jobs=one_time_jobs)
-        await edit_database(one_time_jobs=one_time_jobs)
-        user_states_data = await state.get_data()
-        await state.set_data(user_states_data)
-        collected_data = user_states_data['chosen_collected_data']
+            # Начисляем золото и собираем названия выполненных дел
+            for job_index_str in one_time_chosen_tasks:
+                job_index = int(job_index_str)
+                if 0 <= job_index < len(job_keys):
+                    job_name = job_keys[job_index]
+                    completed_jobs_names.append(job_name)
+                    balance['gold'] += int(one_time_jobs[job_name])
 
+            # Теперь удаляем выполненные дела из основного словаря
+            for job_name in completed_jobs_names:
+                if job_name in one_time_jobs:
+                    del one_time_jobs[job_name]
+
+            # Сохраняем все изменения
+            await edit_database(balance=balance, one_time_jobs=one_time_jobs)
+            await state.update_data(
+                balance=balance,
+                one_time_jobs=one_time_jobs,
+                excel_chosen_tasks=user_states_data.get('excel_chosen_tasks', []) + completed_jobs_names,
+                one_time_chosen_tasks=[]  # Очищаем список выбранных дел
+            )
+
+        # Переход к следующим шагам опроса
+        collected_data = user_states_data.get('chosen_collected_data', [])
         if 'Шаги' in collected_data:
             await call.message.answer("Сколько сделал шагов?")
             await state.set_state(ClientState.steps)
@@ -280,7 +274,7 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
         else:
             await state.update_data(my_steps='-', sleep_quality='-')
             await call.message.answer(
-                'Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
+                'Подробно расскажи про свой день. Выгрузи все эмоции которые ты сегодня пережил и события связанные с ними. Это поможет тебе лучше заснуть')
             await state.set_state(ClientState.about_day)
     elif data == 'Удалить':
         for index, job in enumerate(one_time_jobs.copy()):
@@ -363,19 +357,17 @@ async def process_total_sleep(message: Message, state: FSMContext) -> None:
     else:
         await state.update_data(sleep_quality=0)
         await message.answer(
-            'Хочешь рассказать как прошел день? Это поможет отслеживать почему день был хороший или нет')
+            'Подробно расскажи про свой день. Выгрузи все эмоции которые ты сегодня пережил и события связанные с ними. Это поможет тебе лучше заснуть')
         await state.set_state(ClientState.about_day)
 
 
 @dp.message(ClientState.about_day)
 async def process_about_day(message: Message, state: FSMContext) -> None:
     user_message = message.text
-    if user_message not in negative_responses:
-        await state.update_data(user_message=message.text)
-        await message.answer('Насколько из 10 оцениваете день?')
-        await state.set_state(ClientState.personal_rate)
+    if len(user_message) < 120:
+        await message.answer('Расскажите подробнее про свой день, не ленитесь.')
     else:
-        await state.update_data(user_message='-')
+        await state.update_data(user_message=message.text)
         await message.answer('Насколько из 10 оцениваете день?')
         await state.set_state(ClientState.personal_rate)
 

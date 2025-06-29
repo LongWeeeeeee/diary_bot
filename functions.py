@@ -80,7 +80,7 @@ async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_
         data = pd.DataFrame(columns=['Дата', 'Дела за день', 'Шаги', 'Sleep quality', 'О дне', 'My rate'])
 
     last_row = data.index.max() + 1
-    yesterday = date - timedelta(days=1)
+    yesterday = date
     data.loc[last_row, 'Дата'] = yesterday.strftime("%d.%m.%Y")
     data.loc[last_row, 'Дела за день'] = ", ".join(activities)
     data.loc[last_row, 'Шаги'] = my_steps
