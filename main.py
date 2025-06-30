@@ -114,7 +114,7 @@ async def process_daily_jobs(call: types.CallbackQuery, state: FSMContext):
             else:
                 await state.update_data(my_steps='-', sleep_quality='-')
                 await call.message.answer(
-                    'Подробно расскажи про свой день. Выгрузи все эмоции которые ты сегодня пережил и события связанные с ними. Это поможет тебе лучше заснуть')
+                    'Подробно расскажи про свой день.\nВыгрузи все эмоции которые ты сегодня пережил и события связанные с ними. Это поможет тебе лучше заснуть')
                 await state.set_state(ClientState.about_day)
 
     # --- ИЗМЕНЕНИЕ НАЧАЛО ---
@@ -274,7 +274,7 @@ async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None
         else:
             await state.update_data(my_steps='-', sleep_quality='-')
             await call.message.answer(
-                'Подробно расскажи про свой день. Выгрузи все эмоции которые ты сегодня пережил и события связанные с ними. Это поможет тебе лучше заснуть')
+                'Подробно расскажи про свой день.\nВыгрузи все эмоции которые ты сегодня пережил и события связанные с ними. Это поможет тебе лучше заснуть')
             await state.set_state(ClientState.about_day)
     elif data == 'Удалить':
         for index, job in enumerate(one_time_jobs.copy()):
@@ -357,7 +357,7 @@ async def process_total_sleep(message: Message, state: FSMContext) -> None:
     else:
         await state.update_data(sleep_quality=0)
         await message.answer(
-            'Подробно расскажи про свой день. Выгрузи все эмоции которые ты сегодня пережил и события связанные с ними. Это поможет тебе лучше заснуть')
+            'Подробно расскажи про свой день.\nВыгрузи все эмоции которые ты сегодня пережил и события связанные с ними. Это поможет тебе лучше заснуть')
         await state.set_state(ClientState.about_day)
 
 
