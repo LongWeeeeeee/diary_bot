@@ -29,11 +29,12 @@ TARGET_TZ = pytz.timezone('Europe/Moscow')
 class ClientState(StatesGroup):
     greet = State()
     start = State()
-    change_daily_jobs_1 = State()
+    change_tasks_pool_1 = State()
     steps = State()
     total_sleep = State()
     deep_sleep = State()
     about_day = State()
+    edit_tasks_pool = State()
     personal_rate = State()
     settings = State()
     download = State()
@@ -56,6 +57,7 @@ class ClientState(StatesGroup):
     new_market_product = State()
     new_market_product_2 = State()
     backpack = State()
+    new_today_tasks = State()
 
 
 bot = Bot(token=keys.Token)
@@ -71,7 +73,7 @@ translate = {'понедельник': 'mon', 'вторник': 'tue', 'сред
 
 async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_rate: float,
                            my_steps: int,
-                           daily_tasks: list,
+                           tasks_pool: list,
                            user_message: str, message, excel_chosen_tasks=None, personal_records=None):
     path = str(message.from_user.id) + '_Diary.xlsx'
     try:
@@ -106,7 +108,7 @@ async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_
         worksheet.set_column(f'{row}:{row}', 10, cell_format_middle)  # Установить ширину столбца A равной 20
 
     writer._save()
-    answer = await counter_max_days(data=data, daily_tasks=daily_tasks, message=message,
+    answer = await counter_max_days(data=data, tasks_pool=tasks_pool, message=message,
                                               activities=activities, personal_records=personal_records)
     if answer is not None:
         personal_records = answer
@@ -137,6 +139,17 @@ def day_to_prefix(day: str) -> str:
     }
     return day_to_prefix_dict[day]
 
+
+
+def parse_time_key(key: str) -> int:
+    """
+    Преобразует строку вида "H", "HH", "H:MM" или "HH:MM" в число минут с начала суток.
+    """
+    if ':' in key:
+        hours, minutes = map(int, key.split(':'))
+    else:
+        hours, minutes = int(key), 0
+    return hours * 60 + minutes
 
 def counter_positive(current_word, column, count=0):
     for words in column.iloc[::-1]:
@@ -177,49 +190,63 @@ async def scheduler_in(data, state):
             await edit_database(scheduler_arguments={})
 
 
-def keyboard_builder(inp, chosen, grid=1, price_tag=True, add_dell=True, checks=False, last_button="🚀Отправить 🚀", add_money=False):
-
-    date_builder = InlineKeyboardBuilder()
-    for index, job in enumerate(inp):
-        if checks:
-            date_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
-        elif price_tag == False:
-            if job in chosen:
-                date_builder.button(text=f"{job} ✅️", callback_data=f"{index}")
-            else:
-                date_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
-        else:
-            product_name = job
-            price = inp[job]
-            if type(price) == dict:
-                for date in price:
-                    if price[date]['used'] is False:
-                        price = int(price[date]['price'])
-                        date_builder.button(text=f"{price}💰 {product_name} ✔️", callback_data=f"{index}")
-            else:
-                if str(index) in chosen:
-                    date_builder.button(text=f"{int(price)}💰 {product_name} ✅️", callback_data=f"{index}")
+def keyboard_builder(tasks_pool, chosen, grid=1, price_tag=False, add_dell=True, checks=False, last_button="🚀Отправить 🚀", add_money=False, today_tasks=None):
+    data_builder = InlineKeyboardBuilder()
+    tasks_pool_builder = InlineKeyboardBuilder()
+    if today_tasks:
+        today_tasks = dict(sorted(
+            today_tasks.items(),
+            key=lambda item: parse_time_key(item[0])
+        ))
+        for time, task in today_tasks.items():
+            if checks:
+                data_builder.button(text=f"{time} {task} ✔️", callback_data=f"{time}")
+            elif price_tag == False:
+                if time in chosen:
+                    data_builder.button(text=f"{time} {task} ✅️", callback_data=f"{time}")
                 else:
-                    date_builder.button(text=f"{int(price)}💰 {product_name} ✔️", callback_data=f"{index}")
+                    data_builder.button(text=f"{time} {task} ✔️", callback_data=f"{time}")
+    if tasks_pool:
+        for index, job in enumerate(tasks_pool):
+            tasks_pool_builder.button(text=f"{job}", callback_data=f"{index}")
+        # else:
+        #     product_name = job
+        #     price = inp[job]
+        #     if type(price) == dict:
+        #         for date in price:
+        #             if price[date]['used'] is False:
+        #                 price = int(price[date]['price'])
+        #                 data_builder.button(text=f"{price}💰 {product_name} ✔️", callback_data=f"{index}")
+        #     else:
+        #         if str(index) in chosen:
+        #             data_builder.button(text=f"{int(price)}💰 {product_name} ✅️", callback_data=f"{index}")
+        #         else:
+        #             data_builder.button(text=f"{int(price)}💰 {product_name} ✔️", callback_data=f"{index}")
 
-    date_builder.adjust(grid, grid)
+    data_builder.adjust(grid, grid)
     d_new_builder = InlineKeyboardBuilder()
     if add_money:
         d_new_builder.button(text="Начислить 💰", callback_data="Начислить")
     if add_dell:
+        d_new_builder.button(text="💾Сохранить 💾", callback_data="Сохранить")
         d_new_builder.button(text="💼Добавить 💼", callback_data="Добавить")
-        if inp:
-            d_new_builder.button(text="❌Удалить❌", callback_data="Удалить")
-            d_new_builder.adjust(1, 2)
+        d_new_builder.button(text="❌Удалить❌", callback_data="Удалить")
     if last_button:
         callback = re.sub(r'[\U0001F000-\U0001FAFF\s]+', '', last_button)
         d_new_builder.button(text=last_button, callback_data=callback)
         if add_money:
             d_new_builder.adjust(1, 2, 1)
         else:
-            d_new_builder.adjust(2, 1)
-    date_builder.attach(d_new_builder)
-    return date_builder.as_markup()
+            d_new_builder.adjust(1, 2, 1)
+    tasks_pool_builder.adjust(1, 1)
+    if today_tasks:
+        data_builder.attach(d_new_builder)
+
+        data_builder.attach(tasks_pool_builder)
+        return_builder = data_builder
+    else:
+        return_builder = d_new_builder.attach(tasks_pool_builder)
+    return return_builder.as_markup()
 
 
 
@@ -246,33 +273,53 @@ async def handle_new_user(message: Message, state: FSMContext):
     await message.answer(
         f'''Привет, {message.from_user.full_name}! \nДобро пожаловать в {info.username}!
 Он поможет тебе вести отчет о твоих днях и делать выводы почему день был плохим или хорошим
-Для начала нужно задать список дел и их стоимость. Какие у вас есть дела в течении дня? Например:''')
-    await message.answer('встал в 6:30 : 5, лег в 11 : 5, зарядка утром : 10, массаж : 3, пп : 20')
+Для начала нужно задать список дел через запятую. Какие у вас есть дела в течении дня? Например:''')
+    await message.answer('подьем, отбой, зарядка, массаж головы и ступ, подтягивания, завтрак, обед, ужин, прогулка, расстяжка')
     await message.answer(
         'Вы можете воспользоваться предложенным списком или написать свой. Данные могут быть какие угодно',
         reply_markup=remove_markup)
-    await state.set_state(ClientState.change_daily_jobs_1)
+    await state.set_state(ClientState.change_tasks_pool_1)
 
 
 @dp.message(lambda message: message.text and message.text.lower() == 'заполнить дневник')
-async def daily_jobs(message, state: FSMContext):
+async def tasks_pool_function(message, state: FSMContext):
     user_data = await state.get_data()
-    daily_tasks = user_data.get('daily_tasks', [])
-    daily_chosen_tasks = user_data['daily_chosen_tasks']
 
-    # --- ИЗМЕНЕНИЕ НАЧАЛО ---
-    # Инициализируем/сбрасываем список задач, за которые уже начислили в этой сессии
+    # --- MODIFICATION START ---
+    tasks_pool_full = user_data.get('tasks_pool', [])
+    today_tasks = user_data.get('today_tasks', {})
+    daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
 
-    if daily_tasks:
-        keyboard = keyboard_builder(inp=daily_tasks, grid=2, chosen=daily_chosen_tasks, add_dell=True, add_money=True)
+    # Determine which tasks are already in the daily schedule
+    scheduled_task_names = set(today_tasks.values())
+
+    # The pool of available tasks to add are those not already scheduled
+    unscheduled_tasks = [task for task in tasks_pool_full if task not in scheduled_task_names]
+
+    if not today_tasks and not unscheduled_tasks:
         await message.answer(
-            'Отметьте вчерашние дела после этого нажмите кнопку "Отправить"', reply_markup=keyboard)
-    else:
-        keyboard = keyboard_builder(inp=daily_tasks, grid=2, chosen=daily_chosen_tasks, add_dell=True)
-        await message.answer(
-            'Добавьте ежедневные дела', reply_markup=keyboard)
+            'У вас пока нет дел. Добавьте их в Настройках или прямо сейчас.',
+            reply_markup=generate_keyboard([], last_button='Добавить дела')  # A new keyboard might be useful
+        )
+        await state.set_state(ClientState.change_tasks_pool_1)  # Go to add state
+        return
+
+    # Build the keyboard with the scheduled tasks and the available pool
+    keyboard = keyboard_builder(
+        tasks_pool=unscheduled_tasks,
+        today_tasks=today_tasks,
+        grid=1,
+        chosen=daily_chosen_tasks,
+        add_dell=True
+    )
+
+    await message.answer(
+        'Отметьте выполненные дела. Нижний список - дела, которые можно добавить в расписание на сегодня.',
+        reply_markup=keyboard
+    )
+    # --- MODIFICATION END ---
+
     await state.set_state(ClientState.greet)
-
 
 async def scheduler_list(message, state, out_message, user_states_data, **kwargs):
     # загрузка аргументов в database
@@ -286,26 +333,28 @@ async def scheduler_list(message, state, out_message, user_states_data, **kwargs
     await state.update_data(scheduler_arguments=scheduler_arguments)
 
 
-
-async def start(state, message=None, daily_tasks=None) -> None:
+async def start(state, message=None, tasks_pool=None) -> None:
     data = {}
     user_data = await state.get_data()
     answer = await create_profile(user_id=message.from_user.id)
     if answer is not None:
-        user_id, daily_tasks, one_time_jobs, scheduler_arguments, personal_records, \
-            previous_diary, chosen_collected_data, notifications_data, balance, market = answer[0], json.loads(
+        user_id, tasks_pool, one_time_jobs, scheduler_arguments, personal_records, \
+            previous_diary, chosen_collected_data, notifications_data, today_tasks_db, daily_tasks = answer[
+            0], json.loads(
             answer[1]), json.loads(answer[2]), \
             json.loads(answer[3]), json.loads(answer[4]), answer[5], json.loads(answer[6]), json.loads(
-            answer[7]), json.loads(answer[8]), json.loads(answer[9])
-        data['daily_tasks'] = daily_tasks
+            answer[7]), json.loads(answer[8]), json.loads(
+            answer[9])  # Note: today_tasks is not used from db, daily_tasks is the source of truth
+
+        data['tasks_pool'] = list(set(tasks_pool))
+        # --- MODIFICATION START ---
+        # The session's schedule starts as a copy of the saved daily schedule.
+        data['today_tasks'] = daily_tasks.copy()
+        data['daily_tasks'] = daily_tasks.copy()
+        # --- MODIFICATION END ---
         data['one_time_jobs'] = one_time_jobs
         data['scheduler_arguments'] = scheduler_arguments
-        data['balance'] = balance if balance else {'gold': 0, 'rank': 0}
-        gold, rank = data['balance']['gold'], data['balance']['rank']
-        if market:
-            data['market'] = market
-        else:
-            data['market'] = {'purchase_history': {}, 'store': {}}
+
         if personal_records:
             data['personal_records'] = personal_records
         if 'job_id' in user_data:
@@ -318,7 +367,7 @@ async def start(state, message=None, daily_tasks=None) -> None:
             hours = notifications_data['hours']
             minutes = notifications_data['minutes']
             job_id = scheduler.add_job(
-                daily_jobs,
+                tasks_pool,
                 trigger='cron',
                 hour=hours,
                 minute=minutes,
@@ -326,37 +375,34 @@ async def start(state, message=None, daily_tasks=None) -> None:
             data['job_id'] = job_id.id
 
         data['chosen_collected_data'] = chosen_collected_data
-        data['daily_chosen_tasks'] = user_data.get('daily_chosen_tasks', [])
         data.update({
             'one_time_chosen_tasks': [],
             'excel_chosen_tasks': [],
             'date_chosen_tasks': [],
             'date_jobs_week_chosen_tasks': [],
-            'chosen_store': [],
-            'backpack_chosen': [],
+            'daily_chosen_tasks': [],
         })
         await state.update_data(**data)
 
         path = f"{user_id}_Diary.xlsx"
         if os.path.exists(path):
             keyboard = generate_keyboard(
-            ['Вывести Дневник', 'Настройки', 'Потратить Золото'],
-            first_button='Заполнить Дневник')
+                ['Вывести Дневник', 'Настройки'],
+                first_button='Заполнить Дневник')
         else:
             keyboard = generate_keyboard(['Заполнить Дневник'], last_button='Настройки')
 
-        out_message = f'Ваш баланс: {gold}💰'
+        out_message = ''
         if personal_records:
             record_message = "\n".join(f'{k} : {v}' for k, v in personal_records.items())
             out_message += f'\n\nВаши рекорды:\n{record_message}'
+            await message.answer(out_message, reply_markup=keyboard)
+        else:
+            await message.answer('Главное меню', reply_markup=keyboard)
 
-        await message.answer(out_message, reply_markup=keyboard)
-        # Меняем состояние, чтобы избежать повторного входа
-        # загрузка данных в scheduler из scheduler_arguments from database
         await scheduler_in(data, state)
-    elif answer is None or not daily_tasks:
+    elif answer is None or not tasks_pool:
         await handle_new_user(message, state)
-
 
 async def executing_scheduler_job(state, out_message):
     # функция, которая срабатывает, когда срабатывает scheduler
@@ -377,11 +423,11 @@ async def executing_scheduler_job(state, out_message):
         await edit_database(one_time_jobs=job)
 
 
-async def counter_max_days(data, daily_tasks, message, activities, personal_records, output=''):
+async def counter_max_days(data, tasks_pool, message, activities, personal_records, output=''):
     column = data['Дела за день']
     if column.any():
         negative_dict = {current_word: counter_negative(current_word=current_word, column=column) for current_word in
-                         daily_tasks}
+                         tasks_pool}
         positive_dict = {current_word: counter_positive(current_word=current_word, column=column) for current_word in
                          activities}
         negative_output = '\n'.join(
@@ -401,9 +447,9 @@ async def counter_max_days(data, daily_tasks, message, activities, personal_reco
         if positive_output:
             output += f'Поздравляю! Вы соблюдаете эти дела уже столько дней:\n{positive_output}'
         if negative_output:
-            for name, value in negative_dict.items():
-                if value:
-                    daily_tasks[name] = int(daily_tasks[name])*1.03
+            # for name, value in negative_dict.items():
+            #     if value:
+            #         tasks_pool[name] = int(tasks_pool[name])*1.03
             if output != '':
                 output += '\n\n'
             output += f'Вы не делали эти дела уже столько дней:\n{negative_output}\n\n' \
