@@ -51,31 +51,6 @@ async def download_diary(message: Message, state: FSMContext):
         # Optionally log the error for debugging
 
 
-@dp.message(ClientState.new_today_tasks)
-async def new_today_tasks(message: Message, state: FSMContext = None) -> None:
-    data = message.text
-    try:
-        split_data = data.split(':')
-        if len(split_data) == 2:
-            hours = int(split_data[0])
-            minutes = int(split_data[1])
-        else:
-            hours = int(split_data[0])
-            data = split_data[0] + ':00'
-        user_data = await state.get_data()
-        today_tasks = user_data['today_tasks']
-        task = user_data['temp']
-        if data in today_tasks:
-            await message.answer(f'У вас уже есть задача на {data}')
-            return
-        today_tasks[data] = task
-        await state.update_data(today_tasks=today_tasks)
-        await message.answer('Отлично! Дело добавлено в ваше расписание')
-        await tasks_pool_function(message=message, state=state)
-    except TypeError:
-        await message.answer('Введите правильное время в формате часы:минуты')
-        return
-
 
 @dp.message(lambda message: message.text and message.text.lower() == 'настройки')
 async def settings(message: Message, state: FSMContext = None) -> None:
@@ -135,6 +110,32 @@ async def edit_tasks_pool_handler(message: Message, state: FSMContext):
         reply_markup=builder.as_markup()
     )
     await state.set_state(ClientState.edit_tasks_pool)
+
+
+@dp.message(ClientState.new_today_tasks)
+async def new_today_tasks(message: Message, state: FSMContext = None) -> None:
+    data = message.text
+    try:
+        split_data = data.split(':')
+        if len(split_data) == 2:
+            hours = int(split_data[0])
+            minutes = int(split_data[1])
+        else:
+            hours = int(split_data[0])
+            data = split_data[0] + ':00'
+        user_data = await state.get_data()
+        today_tasks = user_data['today_tasks']
+        task = user_data['temp']
+        if data in today_tasks:
+            await message.answer(f'У вас уже есть задача на {data}')
+            return
+        today_tasks[data] = task
+        await state.update_data(today_tasks=today_tasks)
+        await message.answer('Отлично! Дело добавлено в ваше расписание')
+        await tasks_pool_function(message=message, state=state)
+    except TypeError:
+        await message.answer('Введите правильное время в формате часы:минуты')
+        return
 
 
 @dp.callback_query(ClientState.edit_tasks_pool)
@@ -1264,7 +1265,7 @@ async def change_one_time_jobs_2(message: Message, state: FSMContext) -> None:
     else:
         one_time_jobs = []
     for i in to_add_one_time_jobs:
-        num = len(i) - 67
+        num = len(i) - 55
         if num > 0:
             await message.answer(
                 f'"{i}" Должно быть короче на {num} cимвол\nПопробуйте использовать эмодзи 🎸🕺🍫 или разбейте на 2')
@@ -1298,7 +1299,7 @@ async def change_tasks_pool_1(message: Message, state: FSMContext) -> None:
     user_message = normalized(message.text)
     str_data = user_message.split(', ')
     for i in str_data:
-        num = len(i) - 67
+        num = len(i) - 55
         if num > 0:
             await message.answer(f'"{i}" Должно быть короче на {num} cимвол\n Попробуйте использовать эмодзи 🎸🕺🍫')
             return
