@@ -1298,7 +1298,7 @@ async def change_tasks_pool_1(message: Message, state: FSMContext) -> None:
     user_message = normalized(message.text)
     str_data = user_message.split(', ')
     for i in str_data:
-        num = len(i) - 44
+        num = len(i) - 67
         if num > 0:
             await message.answer(f'"{i}" Должно быть короче на {num} cимвол\n Попробуйте использовать эмодзи 🎸🕺🍫')
             return
