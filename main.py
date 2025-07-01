@@ -1264,7 +1264,7 @@ async def change_one_time_jobs_2(message: Message, state: FSMContext) -> None:
     else:
         one_time_jobs = []
     for i in to_add_one_time_jobs:
-        num = len(i) - 44
+        num = len(i) - 67
         if num > 0:
             await message.answer(
                 f'"{i}" Должно быть короче на {num} cимвол\nПопробуйте использовать эмодзи 🎸🕺🍫 или разбейте на 2')
