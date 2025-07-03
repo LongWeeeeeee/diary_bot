@@ -240,10 +240,9 @@ def keyboard_builder(tasks_pool, chosen, grid=1, price_tag=False, add_dell=True,
             d_new_builder.adjust(1, 2, 1)
     tasks_pool_builder.adjust(1, 1)
     if today_tasks:
-        data_builder.attach(d_new_builder)
-
-        data_builder.attach(tasks_pool_builder)
-        return_builder = data_builder
+        tasks_pool_builder.attach(d_new_builder)
+        tasks_pool_builder.attach(data_builder)
+        return_builder = tasks_pool_builder
     else:
         return_builder = d_new_builder.attach(tasks_pool_builder)
     return return_builder.as_markup()
