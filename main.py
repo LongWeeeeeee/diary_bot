@@ -57,12 +57,7 @@ async def settings(message: Message, state: FSMContext = None) -> None:
     user_data = await state.get_data()
     if user_data is not None and isinstance(user_data, dict) and len(user_data):
         user_data = await state.get_data()
-        inp = ['Напоминания', 'Дела в определенную дату', 'Опрашиваемые данные']
-
-        # --- ИЗМЕНЕНИЕ НАЧАЛО ---
-        # Добавляем новую кнопку для редактирования
-        inp.append('Редактировать список дел')
-        # --- ИЗМЕНЕНИЕ КОНЕЦ ---
+        inp = ['Напоминания', 'Дела в определенную дату', 'Опрашиваемые данные', 'Редактировать список дел']
 
         if not user_data['one_time_jobs']:
             inp.append('Добавить Разовые Дела')
@@ -162,7 +157,6 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
         # Обновляем данные в состоянии и в БД
         await state.update_data(tasks_pool=new_tasks_pool, tasks_to_delete=[])
         await edit_database(tasks_pool=new_tasks_pool)
-
         await bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -217,13 +211,13 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext):
     data = call.data
     user_states_data = await state.get_data()
 
-    tasks_pool_full = user_states_data.get('tasks_pool', [])
+    tasks_pool = user_states_data.get('tasks_pool', [])
     today_tasks = user_states_data.get('today_tasks', {})
     daily_chosen_tasks = user_states_data.get('daily_chosen_tasks', [])
 
     # --- RECALCULATE UNSCHEDULED TASKS FOR CONTEXT ---
     scheduled_task_names = set(today_tasks.values())
-    unscheduled_tasks = [task for task in tasks_pool_full if task not in scheduled_task_names]
+    unscheduled_tasks = [task for task in tasks_pool if task not in scheduled_task_names]
 
     if data == 'Отправить':
         await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
@@ -261,7 +255,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext):
         await state.update_data(today_tasks=today_tasks, daily_chosen_tasks=[])
 
         # Re-render the keyboard with the updated lists
-        updated_unscheduled = [task for task in tasks_pool_full if task not in today_tasks.values()]
+        updated_unscheduled = [task for task in tasks_pool if task not in today_tasks.values()]
         keyboard = keyboard_builder(
             tasks_pool=updated_unscheduled,
             today_tasks=today_tasks,
@@ -276,25 +270,17 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext):
         )
 
     elif data == 'Добавить':
+        keyboard = keyboard_builder(tasks_pool=tasks_pool,
+                                    add_dell=False,
+                                    )
+
         await call.message.answer(
-            'Введите **общие** дела, которые вы хотели бы добавить в свой пул задач (не в расписание). Например:\nПодтягивания, Практика гитары')
+            'Ниже список ваших общих дел.\nВыберите те, которые хотите добавить в ваше расписание на сегодня',
+        reply_markup=keyboard)
         await state.update_data(call=call)
         await state.set_state(ClientState.change_tasks_pool_1)
 
     else:  # This block handles both checking a scheduled task and adding a new one
-        try:
-            # --- Case 1: An unscheduled task was clicked (data is its index in the unscheduled list) ---
-            task_index = int(data)
-            if 0 <= task_index < len(unscheduled_tasks):
-                chosen_task_to_add = unscheduled_tasks[task_index]
-                await call.message.answer(f'Вы выбрали: {chosen_task_to_add}\n'
-                                          f'Введите время в формате ЧЧ:ММ, на которое вы хотите назначить это дело.')
-                await state.update_data(temp=chosen_task_to_add)
-                await state.set_state(ClientState.new_today_tasks)
-            else:
-                await call.answer("Ошибка: неверный индекс задачи.", show_alert=True)
-
-        except ValueError:
             # --- Case 2: A scheduled task was clicked (data is the time string) ---
             # This is for marking a task as done/not done
             if data in daily_chosen_tasks:
@@ -310,13 +296,27 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext):
                 today_tasks=today_tasks,
                 chosen=daily_chosen_tasks,
                 grid=1,
-                add_dell=True
+                add_dell=True,
+                last_button="🚀Отправить 🚀"
             )
             await bot.edit_message_reply_markup(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 reply_markup=keyboard
             )
+
+@dp.callback_query(ClientState.change_tasks_pool_1)
+async def proceed_tasks_pool_1(call, state: FSMContext) -> None:
+    user_data = await state.get_data()
+    data = int(call.data)
+    if 'tasks_pool' in user_data:
+        tasks_pool = user_data['tasks_pool']
+    else:
+        return
+    await call.message.answer(f'Вы выбрали: {tasks_pool[data]}\n'
+                              f'Введите время в формате ЧЧ:ММ, на которое вы хотите назначить это дело.')
+    await state.update_data(temp=tasks_pool[data])
+    await state.set_state(ClientState.new_today_tasks)
 
 
 
@@ -1289,48 +1289,7 @@ async def change_one_time_jobs_2(message: Message, state: FSMContext) -> None:
     await start(message=message, state=state)
 
 
-@dp.message(ClientState.change_tasks_pool_1)
-async def change_tasks_pool_1(message: Message, state: FSMContext) -> None:
-    user_data = await state.get_data()
-    if 'tasks_pool' in user_data:
-        tasks_pool = user_data['tasks_pool']
-    else:
-        tasks_pool = []
-    user_message = normalized(message.text)
-    str_data = user_message.split(', ')
-    for i in str_data:
-        num = len(i) - 55
-        if num > 0:
-            await message.answer(f'"{i}" Должно быть короче на {num} cимвол\n Попробуйте использовать эмодзи 🎸🕺🍫')
-            return
-        else:
-            tasks_pool.append(i)
-    if 'daily_chosen_tasks' in user_data:
-        daily_chosen_tasks = user_data['daily_chosen_tasks']
-        if 'call' in user_data:
-            call = user_data['call']
-            keyboard = keyboard_builder(tasks_pool=list(set(tasks_pool)), chosen=daily_chosen_tasks, grid=1)
-            await bot.edit_message_reply_markup(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                reply_markup=keyboard)
 
-            if len(tasks_pool) == 0:
-                if 'messages_to_edit' in user_data:
-                    messages_to_edit = user_data['messages_to_edit']
-                    await bot.delete_message(message.chat.id, messages_to_edit['message'])
-                    await bot.edit_message_text('Добавьте список дел', message.chat.id, messages_to_edit['keyboard'])
-    await state.update_data(tasks_pool=list(set(tasks_pool)))
-    await edit_database(tasks_pool=list(set(tasks_pool)))
-    path = f"{message.from_user.id}_Diary.xlsx"
-    if os.path.exists(path):
-        keyboard = generate_keyboard(
-            ['Вывести Дневник', 'Настройки'],
-            first_button='Заполнить Дневник')
-    else:
-        keyboard = generate_keyboard(['Заполнить Дневник'], last_button='Настройки')
-    await message.answer('Отлично, ваш список ежедневных дел обновлен!', keyboard=keyboard)
-    await start(message=message, state=state)
 
 
 

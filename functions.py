@@ -190,10 +190,10 @@ async def scheduler_in(data, state):
             await edit_database(scheduler_arguments={})
 
 
-def keyboard_builder(tasks_pool, chosen, grid=1, price_tag=False, add_dell=True, checks=False, last_button="🚀Отправить 🚀", add_money=False, today_tasks=None):
+def keyboard_builder(tasks_pool, chosen=None, add_save=None, grid=1, price_tag=False, add_dell=True, checks=False, last_button=None, add_money=False, today_tasks=None):
     data_builder = InlineKeyboardBuilder()
     tasks_pool_builder = InlineKeyboardBuilder()
-    if today_tasks:
+    if today_tasks is not None:
         today_tasks = dict(sorted(
             today_tasks.items(),
             key=lambda item: parse_time_key(item[0])
@@ -206,7 +206,7 @@ def keyboard_builder(tasks_pool, chosen, grid=1, price_tag=False, add_dell=True,
                     data_builder.button(text=f"{time} {task} ✅️", callback_data=f"{time}")
                 else:
                     data_builder.button(text=f"{time} {task} ✔️", callback_data=f"{time}")
-    if tasks_pool:
+    if tasks_pool is not None:
         for index, job in enumerate(tasks_pool):
             tasks_pool_builder.button(text=f"{job}", callback_data=f"{index}")
         # else:
@@ -239,10 +239,9 @@ def keyboard_builder(tasks_pool, chosen, grid=1, price_tag=False, add_dell=True,
         else:
             d_new_builder.adjust(1, 2, 1)
     tasks_pool_builder.adjust(1, 1)
-    if today_tasks:
+    if today_tasks is not None:
         data_builder.attach(d_new_builder)
-
-        data_builder.attach(tasks_pool_builder)
+        # data_builder.attach(tasks_pool_builder)
         return_builder = data_builder
     else:
         return_builder = d_new_builder.attach(tasks_pool_builder)
@@ -310,13 +309,19 @@ async def tasks_pool_function(message, state: FSMContext):
         today_tasks=today_tasks,
         grid=1,
         chosen=daily_chosen_tasks,
-        add_dell=True
+        add_dell=True,
+        last_button="🚀Отправить 🚀"
     )
-
-    await message.answer(
-        'Отметьте выполненные дела. Нижний список - дела, которые можно добавить в расписание на сегодня.',
-        reply_markup=keyboard
-    )
+    if today_tasks:
+        await message.answer(
+            'Отметьте выполненные дела. Нижний список - дела, которые можно добавить в расписание на сегодня.',
+            reply_markup=keyboard
+        )
+    else:
+        await message.answer(
+            'Ваш список дел пуст! Добавьте их нажав на кнопку "Добавить',
+            reply_markup=keyboard
+        )
     # --- MODIFICATION END ---
 
     await state.set_state(ClientState.greet)
