@@ -5,6 +5,7 @@ import datetime
 import os
 import logging # <--- ДОБАВИТЬ
 import traceback
+import re
 from keys import ADMIN_ID
 from aiogram import types
 from aiogram.fsm.context import FSMContext
@@ -82,7 +83,7 @@ async def go_to_main_menu(message: Message, state: FSMContext) -> None:
 async def edit_tasks_pool_handler(message: Message, state: FSMContext):
     user_data = await state.get_data()
     tasks_pool = user_data.get('tasks_pool', [])
-
+    edit_tasks_pool_chosen = user_data.get('edit_tasks_pool_chosen', [])
     if not tasks_pool:
         await message.answer("Ваш список дел пуст. Сначала добавьте дела.")
         return
@@ -91,18 +92,10 @@ async def edit_tasks_pool_handler(message: Message, state: FSMContext):
     await state.update_data(tasks_to_delete=[])
 
     # Используем немного измененный keyboard_builder или создадим новый
-    builder = InlineKeyboardBuilder()
-    for index, task in enumerate(tasks_pool):
-        # В callback_data передаем индекс задачи в списке
-        builder.button(text=f"❌ {task}", callback_data=f"del_task_{index}")
-
-    builder.button(text="✔️ Готово", callback_data="confirm_deletion")
-    builder.button(text="Отмена", callback_data="cancel_deletion")
-    builder.adjust(1)  # Все кнопки в один столбец для наглядности
-
+    keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True, chosen=edit_tasks_pool_chosen)
     await message.answer(
-        "Выберите дела, которые хотите удалить навсегда из общего списка. Когда закончите, нажмите 'Готово'.",
-        reply_markup=builder.as_markup()
+        "Ваш общий список дел",
+        reply_markup=keyboard
     )
     await state.set_state(ClientState.edit_tasks_pool)
 
@@ -138,71 +131,52 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
     await call.answer()
     user_data = await state.get_data()
     tasks_pool = user_data.get('tasks_pool', [])
-    tasks_to_delete = user_data.get('tasks_to_delete', [])
-
-    if call.data == "confirm_deletion":
-        if not tasks_to_delete:
+    edit_tasks_pool_chosen = user_data.get('edit_tasks_pool_chosen', [])
+    if call.data == "Удалить":
+        if not edit_tasks_pool_chosen:
             await call.answer("Вы ничего не выбрали для удаления.", show_alert=True)
             return
 
-        # Создаем новый список, исключая задачи с выбранными индексами
-        # Сортируем индексы в обратном порядке, чтобы избежать проблем при удалении
-        tasks_to_delete.sort(reverse=True)
-        new_tasks_pool = tasks_pool.copy()
-
-        deleted_tasks_names = []
-        for index in tasks_to_delete:
-            deleted_tasks_names.append(new_tasks_pool.pop(index))
+        for name in edit_tasks_pool_chosen:
+            tasks_pool.remove(name)
 
         # Обновляем данные в состоянии и в БД
-        await state.update_data(tasks_pool=new_tasks_pool, tasks_to_delete=[])
-        await edit_database(tasks_pool=new_tasks_pool)
-        await bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=f"Следующие дела были удалены:\n- " + "\n- ".join(reversed(deleted_tasks_names)),
-            reply_markup=None  # Убираем клавиатуру
-        )
-        await call.message.answer("Ваш список дел обновлен. Возврат в главное меню...")
-        await tasks_pool_function(call.message, state)
-
-    elif call.data == "cancel_deletion":
-        await bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text="Удаление отменено.",
-            reply_markup=None
-        )
-        await start(message=call.message, state=state)
-
-    elif call.data.startswith("del_task_"):
-        index_to_toggle = int(call.data.split('_')[2])
-
-        # Логика выбора/отмены выбора
-        if index_to_toggle in tasks_to_delete:
-            tasks_to_delete.remove(index_to_toggle)
+        keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True, chosen=edit_tasks_pool_chosen)
+        await state.update_data(tasks_pool=tasks_pool, edit_tasks_pool_chosen=[])
+        await edit_database(tasks_pool=tasks_pool)
+        await call.message.edit_reply_markup(reply_markup=keyboard)
+    elif call.data == 'Добавить':
+        await call.message.answer('Введите список дел который хотите добавить через запятую')
+        await state.set_state(ClientState.add_tasks_pool)
+        await state.update_data(call=call)
+    else:
+        data = int(call.data)
+        if tasks_pool[data] in edit_tasks_pool_chosen:
+            edit_tasks_pool_chosen.remove(tasks_pool[data])
         else:
-            tasks_to_delete.append(index_to_toggle)
+            edit_tasks_pool_chosen.append(tasks_pool[data])
+        keyboard = keyboard_builder(tasks_pool=tasks_pool, chosen=edit_tasks_pool_chosen, add_dell=True)
+        await call.message.edit_reply_markup(reply_markup=keyboard)
 
-        await state.update_data(tasks_to_delete=tasks_to_delete)
 
-        # Обновляем клавиатуру, чтобы показать выбор (✅)
-        builder = InlineKeyboardBuilder()
-        for index, task in enumerate(tasks_pool):
-            if index in tasks_to_delete:
-                builder.button(text=f"✅ {task}", callback_data=f"del_task_{index}")
-            else:
-                builder.button(text=f"❌ {task}", callback_data=f"del_task_{index}")
+@dp.message(ClientState.add_tasks_pool)
+async def add_tasks_pool(message, state: FSMContext):
+    data = message.text
+    normalized = re.sub(r'\s*,\s*', ', ', data).split(', ')
+    user_data = await state.get_data()
+    call = user_data['call']
+    user_data = await state.get_data()
+    tasks_pool = set(user_data['tasks_pool'])
+    for word in normalized:
+        tasks_pool.add(word)
+    tasks_pool = list(tasks_pool)
+    keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True)
+    await call.message.edit_reply_markup(reply_markup=keyboard)
+    await state.update_data(tasks_pool=tasks_pool)
+    await edit_database(tasks_pool=tasks_pool)
+    await message.answer('Ваш список общих дел обновлен!')
 
-        builder.button(text="✔️ Готово", callback_data="confirm_deletion")
-        builder.button(text="Отмена", callback_data="cancel_deletion")
-        builder.adjust(1)
 
-        await bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=builder.as_markup()
-        )
 
 
 @dp.callback_query(ClientState.greet)
@@ -214,7 +188,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext):
     tasks_pool = user_states_data.get('tasks_pool', [])
     today_tasks = user_states_data.get('today_tasks', {})
     daily_chosen_tasks = user_states_data.get('daily_chosen_tasks', [])
-
+    one_time_jobs = user_states_data.get('one_time_jobs', [])
     # --- RECALCULATE UNSCHEDULED TASKS FOR CONTEXT ---
     scheduled_task_names = set(today_tasks.values())
     unscheduled_tasks = [task for task in tasks_pool if task not in scheduled_task_names]
@@ -255,22 +229,19 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext):
         await state.update_data(today_tasks=today_tasks, daily_chosen_tasks=[])
 
         # Re-render the keyboard with the updated lists
-        updated_unscheduled = [task for task in tasks_pool if task not in today_tasks.values()]
         keyboard = keyboard_builder(
-            tasks_pool=updated_unscheduled,
             today_tasks=today_tasks,
-            chosen=[],  # Choices are now cleared
+            chosen=daily_chosen_tasks,  # Choices are now cleared
             grid=1,
-            add_dell=True
+            add_dell=True,
+            add_save=True,
+            last_button="🚀Отправить 🚀",
         )
-        await bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=keyboard
-        )
+        await call.message.edit_reply_markup(reply_markup=keyboard)
 
     elif data == 'Добавить':
-        keyboard = keyboard_builder(tasks_pool=tasks_pool,
+        tasks_pool_clear = [i for i in tasks_pool if i not in today_tasks.values()]
+        keyboard = keyboard_builder(tasks_pool=tasks_pool_clear,
                                     add_dell=False,
                                     )
 
@@ -292,12 +263,12 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext):
 
             # Rebuild keyboard to show the checkmark
             keyboard = keyboard_builder(
-                tasks_pool=unscheduled_tasks,
                 today_tasks=today_tasks,
                 chosen=daily_chosen_tasks,
                 grid=1,
                 add_dell=True,
-                last_button="🚀Отправить 🚀"
+                last_button="🚀Отправить 🚀",
+                add_save=True,
             )
             await bot.edit_message_reply_markup(
                 chat_id=call.message.chat.id,
@@ -309,13 +280,12 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext):
 async def proceed_tasks_pool_1(call, state: FSMContext) -> None:
     user_data = await state.get_data()
     data = int(call.data)
-    if 'tasks_pool' in user_data:
-        tasks_pool = user_data['tasks_pool']
-    else:
-        return
-    await call.message.answer(f'Вы выбрали: {tasks_pool[data]}\n'
+    tasks_pool = user_data['tasks_pool']
+    today_tasks = user_data['today_tasks']
+    tasks_pool_clear = [i for i in tasks_pool if i not in today_tasks.values()]
+    await call.message.answer(f'Вы выбрали: {tasks_pool_clear[data]}\n'
                               f'Введите время в формате ЧЧ:ММ, на которое вы хотите назначить это дело.')
-    await state.update_data(temp=tasks_pool[data])
+    await state.update_data(temp=tasks_pool_clear[data])
     await state.set_state(ClientState.new_today_tasks)
 
 
@@ -333,96 +303,6 @@ async def rebuild_keyboard_with_chosen(data, call, chosen_tasks, state, tasks, t
         message_id=call.message.message_id,
         reply_markup=keyboard)
 
-
-# @dp.callback_query(ClientState.one_time_jobs_proceed)
-# async def process_one_time(call: types.CallbackQuery, state: FSMContext) -> None:
-#     await call.answer()
-#     data = call.data
-#     user_states_data = await state.get_data()
-#     # balance = user_states_data['balance']
-#     one_time_chosen_tasks = user_states_data.get('one_time_chosen_tasks', [])
-#     one_time_jobs = user_states_data.get('one_time_jobs', [])
-#
-#     if data == 'Отправить':
-#         if one_time_chosen_tasks:
-#             # Создаем список ключей (названий дел) для безопасного доступа по индексу
-#             # Начисляем золото и собираем названия выполненных дел
-#             # for job_index_str in one_time_chosen_tasks:
-#             #     job_index = int(job_index_str)
-#             #     if 0 <= job_index < len(job_keys):
-#             #         job_name = job_keys[job_index]
-#             #         completed_jobs_names.append(job_name)
-#             #         balance['gold'] += int(one_time_jobs[job_name])
-#
-#             # Теперь удаляем выполненные дела из основного словаря
-#             for job_name in one_time_chosen_tasks:
-#                 one_time_jobs.pop(int(job_name))
-#
-#             # Сохраняем все изменения
-#             await edit_database(one_time_jobs=one_time_jobs)
-#             await state.update_data(
-#                 one_time_jobs=one_time_jobs,
-#                 excel_chosen_tasks=user_states_data.get('excel_chosen_tasks', []) + one_time_chosen_tasks,
-#                 one_time_chosen_tasks=[]  # Очищаем список выбранных дел
-#             )
-#
-#         # Переход к следующим шагам опроса
-#         collected_data = user_states_data.get('chosen_collected_data', [])
-#         if 'Шаги' in collected_data:
-#             await call.message.answer("Сколько сделал шагов?")
-#             await state.set_state(ClientState.steps)
-#         elif 'Сон' in collected_data:
-#             await state.update_data(my_steps='-')
-#             await call.message.answer("Введите индекс качества сна")
-#             await state.set_state(ClientState.total_sleep)
-#         else:
-#             await state.update_data(my_steps='-', sleep_quality='-')
-#             await call.message.answer(
-#                 'Подробно расскажи про свой день.\nВыгрузи все эмоции которые ты сегодня пережил и события связанные с ними. Это поможет тебе лучше заснуть')
-#             await state.set_state(ClientState.about_day)
-#     elif data == 'Удалить':
-#         for index, job in enumerate(one_time_jobs.copy()):
-#             if str(index) in one_time_chosen_tasks:
-#                 del one_time_jobs[job]
-#         if len(one_time_jobs):
-#             keyboard = keyboard_builder(inp=one_time_jobs, grid=1, chosen=one_time_chosen_tasks)
-#             await bot.edit_message_reply_markup(
-#                 chat_id=call.message.chat.id,
-#                 message_id=call.message.message_id,
-#                 reply_markup=keyboard)
-#             await state.update_data(one_time_jobs=one_time_jobs)
-#             await edit_database(one_time_jobs=one_time_jobs)
-#
-#         else:
-#             new_ot_builder = InlineKeyboardBuilder()
-#             new_ot_builder.button(text="💼Добавить 💼", callback_data="Добавить")
-#             del user_states_data['one_time_jobs']
-#             await state.set_data(user_states_data)
-#             await bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
-#                                         reply_markup=new_ot_builder.as_markup(), text='Добавьте список дел')
-#         await state.update_data(one_time_chosen_tasks=[])
-#         await edit_database(one_time_jobs=one_time_jobs)
-#
-#     elif data == 'Добавить':
-#         await call.message.answer('Введите разовые дела и их стоимость, которые вы хотели бы добавить через запятую. Например:\n\nСходить в баню : 60')
-#         await state.update_data(one_time_call=call)
-#         await state.set_state(ClientState.one_time_jobs_2)
-#
-#     else:
-#         one_time_jobs = user_states_data['one_time_jobs']
-#         one_time_chosen_tasks = user_states_data['one_time_chosen_tasks']
-#
-#         if data in one_time_chosen_tasks:
-#             one_time_chosen_tasks.remove(data)
-#         else:
-#             one_time_chosen_tasks.append(data)
-#
-#         keyboard = keyboard_builder(inp=one_time_jobs, chosen=one_time_chosen_tasks, grid=1)
-#         await bot.edit_message_reply_markup(
-#             chat_id=call.message.chat.id,
-#             message_id=call.message.message_id,
-#             reply_markup=keyboard)
-#         await state.update_data(one_time_chosen_tasks=one_time_chosen_tasks)
 
 
 async def get_valid_number(message: Message, state: FSMContext, field: str, prompt: str, next_state, min_val=None, max_val=None):
@@ -529,7 +409,6 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
     await state.update_data(today_tasks=saved_daily_tasks.copy())
 
     # Instead of going to the main menu, show the user their schedule for the next day
-    await message.answer("Отлично, дневник заполнен! Вот ваше стандартное расписание на день.")
     await tasks_pool_function(message, state)
     # --- MODIFICATION END ---
 
@@ -577,261 +456,6 @@ async def my_records(message: Message, state: FSMContext) -> None:
         await message.answer('Ваши рекорды:\n' + '\n'.join(output))
     else:
         await start(message=message, state=state)
-
-# @dp.message(lambda message: message.text and message.text.lower() == 'потратить золото')
-# async def market_init(message, state):
-#     user_data = await state.get_data()
-#     balance = user_data['balance']
-#     gold = balance['gold']
-#     store = user_data['market']['store']
-#     chosen_store = user_data['chosen_store']
-#     keyboard = keyboard_builder(checks=False, inp=store, add_dell=True, chosen=chosen_store, grid=2, last_button="💰Потратить 💰")
-#     await message.answer(f'Ваш баланс: {gold}💰', reply_markup=keyboard)
-#     keyboard = generate_keyboard(buttons=['Рюкзак'], last_button='В Главное Меню')
-#     await message.answer(f'Купленные товары можно посмотреть в "Рюкзаке"', reply_markup=keyboard)
-#     await state.set_state(ClientState.market)
-#
-#
-# @dp.message(lambda message: message.text and message.text.lower() == 'рюкзак', ClientState.market)
-# async def backpack(message, state):
-#     user_data = await state.get_data()
-#     purchase_history = user_data['market']['purchase_history']
-#     out = []
-#     path = f"{message.from_user.id}_Diary.xlsx"
-#     if os.path.exists(path):
-#         out_keyboard = generate_keyboard(
-#         ['Вывести Дневник', 'Настройки', 'Потратить Золото'],
-#         first_button='Заполнить Дневник')
-#     else: out_keyboard = generate_keyboard(['Заполнить Дневник'], last_button='Настройки')
-#
-#     for key, value in purchase_history.items():
-#         for i in value:
-#             price = i['price']
-#             time = i['time']
-#             out += [f"{time} {key} - {price}💰"]
-#     out = '\n'.join(out)
-#     if any(not item['used'] for value in purchase_history.values() for item in value):
-#         date_builder = InlineKeyboardBuilder()
-#         for product in purchase_history:
-#             product_data = purchase_history[product]
-#             for index, purchase in enumerate(product_data):
-#                 if purchase['used'] is False:
-#                     # price = product_data[date]['price']
-#                     date_builder.button(text=f"{purchase['time']} {product} ✔️", callback_data=f"{product} : {index}")
-#         date_builder.adjust(2, 2)
-#         d_new_builder = InlineKeyboardBuilder()
-#         d_new_builder.button(text="🎂Использовать 🎂", callback_data="Использовать")
-#         d_new_builder.adjust(2, 1)
-#         date_builder.attach(d_new_builder)
-#         keyboard = date_builder.as_markup()
-#         # keyboard = keyboard_builder(inp=purchase_history, checks=False, last_button="☀️Использовать☀️", add_dell=False)
-#         await message.answer('Ваш рюкзак', reply_markup=keyboard)
-#         await message.answer(f'История покупок:\n{out}', reply_markup=out_keyboard)
-#         await state.set_state(ClientState.backpack)
-#     else:
-#
-#         await message.answer(f'Рюкзак пуст\n\nИстория покупок:\n{out}', reply_markup=out_keyboard)
-#
-#
-# @dp.callback_query(ClientState.backpack)
-# async def proceed_backpack(call: types.CallbackQuery, state: FSMContext):
-#     await call.answer()
-#     data = call.data
-#     user_data = await state.get_data()
-#     message = user_data['message']
-#     market = user_data['market']
-#     backpack_chosen = user_data['backpack_chosen']
-#     purchase_history = user_data['market']['purchase_history']
-#     if data == 'Использовать':
-#         for i in backpack_chosen:
-#             data_splited = i.split(' : ')
-#             index = int(data_splited[1])
-#             product = data_splited[0]
-#             purchase_history[product][index]['used'] = True
-#         if any(not item['used'] for value in purchase_history.values() for item in value):
-#             date_builder = InlineKeyboardBuilder()
-#             for product in purchase_history:
-#                 product_data = purchase_history[product]
-#                 for index, purchase in enumerate(product_data):
-#                     if purchase['used'] is False:
-#                         # price = product_data[date]['price']
-#                         date_builder.button(text=f"{purchase['time']} {product} ✔️",
-#                                             callback_data=f"{product} : {index}")
-#             date_builder.adjust(2, 2)
-#             d_new_builder = InlineKeyboardBuilder()
-#             d_new_builder.button(text="🎂Использовать 🎂", callback_data="Использовать")
-#             d_new_builder.adjust(2, 1)
-#             date_builder.attach(d_new_builder)
-#             keyboard = date_builder.as_markup()
-#             await bot.edit_message_reply_markup(
-#                 chat_id=call.message.chat.id,
-#                 message_id=call.message.message_id,
-#                 reply_markup=keyboard)
-#         else:
-#             path = str(message.from_user.id) + '_Diary.xlsx'
-#             if os.path.exists(path):
-#                 keyboard = generate_keyboard(['Вывести Дневник', 'Настройки', 'Скачать Дневник'],
-#                                              first_button='Заполнить Дневник')
-#             else:
-#                 keyboard = generate_keyboard(['Настройки', 'Заполнить Дневник'])
-#             await bot.delete_message(
-#                 chat_id=call.message.chat.id,
-#                 message_id=call.message.message_id
-#             )
-#             await call.message.answer('Рюкзак пуст', keyboard=keyboard)
-#         await edit_database(market=market)
-#         await start(message=message, state=state)
-#     else:
-#         if data in backpack_chosen:
-#             backpack_chosen.remove(data)
-#         else:
-#             backpack_chosen.append(data)
-#         date_builder = InlineKeyboardBuilder()
-#         for product in purchase_history:
-#             product_data = purchase_history[product]
-#             for index, purchase in enumerate(product_data):
-#                 if purchase['used'] is False:
-#                     foo = f'{str(product)} : {str(index)}'
-#                     if foo in backpack_chosen:
-#                         date_builder.button(text=f"{purchase['time']} {product} ✅️️",
-#                                             callback_data=f"{product} : {index}")
-#                     else:
-#                         date_builder.button(text=f"{purchase['time']} {product} ✔️", callback_data=f"{product} : {index}")
-#         date_builder.adjust(2, 2)
-#         d_new_builder = InlineKeyboardBuilder()
-#         d_new_builder.button(text="🎂Использовать 🎂", callback_data="Использовать")
-#         d_new_builder.adjust(2, 1)
-#         date_builder.attach(d_new_builder)
-#         keyboard = date_builder.as_markup()
-#         await bot.edit_message_reply_markup(
-#             chat_id=call.message.chat.id,
-#             message_id=call.message.message_id,
-#             reply_markup=keyboard)
-#
-#
-# async def spend_money(gold, market, chosen_store, call):
-#     now = datetime.datetime.now()
-#     store = market['store']
-#     # Форматируем дату и время в нужный формат
-#     formatted_date = now.strftime("%Y-%-m-%-d")
-#     purchased_products = []
-#     if chosen_store:
-#         for index, i in enumerate(store):
-#             price = int(store[i])
-#             product = i
-#             if str(index) in chosen_store:
-#                 if gold >= price:
-#                     gold -= price
-#                     market['purchase_history'].setdefault(product, []).append({'price': price, 'time': formatted_date, 'used': False})
-#                     purchased_products.append(product)
-#                     market['store'][i] = int(market['store'][i]) * 1.05
-#                 else:
-#                     await call.message.answer('Недостаточно золота на балансе!\n Выполняйте задачи, чтобы его заработать')
-#                     return
-#     return purchased_products, gold, market
-#
-#
-# @dp.callback_query(ClientState.market)
-# async def proceed_market(call: types.CallbackQuery, state: FSMContext):
-#     await call.answer()
-#     data = call.data
-#     user_data = await state.get_data()
-#     balance = user_data['balance']
-#     gold = int(balance['gold'])
-#     market = user_data['market']
-#     store = user_data['market']['store']
-#     chosen_store = user_data['chosen_store']
-#     if data == 'Добавить':
-#         await call.message.answer('Введите товары их стоимость через запятую. Например:\nКупить шоколадку : 300, Сходить в кафе: 1000')
-#         await state.set_state(ClientState.new_market_product)
-#     elif data == 'Удалить':
-#         for i in chosen_store:
-#             del store[i]
-#
-#         keyboard = keyboard_builder(checks=False, inp=store, add_dell=True, last_button="💰Потратить 💰",
-#                                     chosen=chosen_store, grid=2)
-#         await bot.edit_message_reply_markup(
-#             chat_id=call.message.chat.id,
-#             message_id=call.message.message_id,
-#             reply_markup=keyboard)
-#         await edit_database(market=market)
-#         await state.update_data(chosen_store=[])
-#     elif data == 'Потратить':
-#         answer = await spend_money(gold, market, chosen_store, call)
-#         if answer:
-#             purchased_products, gold, market = answer
-#             balance['gold'] = gold
-#             purchased_products_out = "\n".join(purchased_products)
-#             await edit_database(market=market)
-#             await call.message.answer(f'Вы приобрели:\n{purchased_products_out}')
-#             await state.update_data(balance=balance)
-#             await edit_database(balance=balance)
-#             keyboard = keyboard_builder(checks=False, inp=store, add_dell=True, last_button="💰Потратить 💰", chosen=chosen_store, grid=2)
-#             await bot.edit_message_text(
-#                 chat_id=call.message.chat.id,
-#                 message_id=call.message.message_id,
-#                 text=f"Ваш баланс: {gold}💰",
-#                 reply_markup=keyboard
-#             )
-#
-#     else:
-#         if data in chosen_store:
-#             chosen_store.remove(data)
-#         else:
-#             chosen_store.append(data)
-#         await state.update_data(chosen_store=chosen_store)
-#         keyboard = keyboard_builder(checks=False, inp=store, add_dell=True, last_button="💰Потратить 💰",
-#                                     chosen=chosen_store, grid=2)
-#         await bot.edit_message_reply_markup(
-#             chat_id=call.message.chat.id,
-#             message_id=call.message.message_id,
-#             reply_markup=keyboard)
-#
-#
-# @dp.message(ClientState.new_market_product)
-# async def new_market_goods(message, state):
-#     user_data = await state.get_data()
-#     product_names = message.text.split(',')
-#     for product in product_names:
-#         product_splited = product.split(' : ')
-#         if len(product_splited) != 2 or not product_splited[1].isdigit():
-#             await message.answer(f'Соблюдайте порядок,{product} должен выглядеть как "товар : стоимость"')
-#             return
-#         product_name = product_splited[0]
-#         try:
-#             price = int(product_splited[1])
-#         except ValueError:
-#             await message.answer(f'Цена должна быть числом: {product_splited[1]}')
-#             return
-#         num = len(product_name) - 44
-#         if num > 0:
-#             await message.answer(
-#                 f'"{product_name}" Должно быть короче на {num} cимвол\nПопробуйте использовать эмодзи 🎸🕺🍫 или разбейте на 2')
-#             return
-#         store = user_data['market']['store']
-#         store[product_name] = price
-#     await state.update_data(market=user_data['market'])
-#     await edit_database(market=user_data['market'])
-#     await start(state=state, message=message)
-#
-#
-# @dp.message(ClientState.new_market_product_2)
-# async def new_market_goods_2(message, state):
-#     price = message.text
-#     try:
-#         price = int(price)
-#     except:
-#         await message.answer('Стоимость должна быть больше 0')
-#     if price <= 0:
-#         await message.answer('Стоимость должна быть больше 0')
-#     else:
-#         user_data = await state.get_data()
-#         product_name = user_data['product_name']
-#         store = user_data['market']['store']
-#         store[product_name] = price
-#         await state.update_data(market=user_data['market'])
-#         await edit_database(market=user_data['market'])
-#         await start(state=state, message=message)
 
 
 @dp.message(lambda message: message.text and message.text.lower() == 'напоминания', ClientState.settings)

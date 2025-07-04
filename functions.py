@@ -34,6 +34,9 @@ class ClientState(StatesGroup):
     total_sleep = State()
     deep_sleep = State()
     about_day = State()
+    change_today_tasks = State()
+    change_today_tasks_1 = State()
+    add_tasks_pool = State()
     edit_tasks_pool = State()
     personal_rate = State()
     settings = State()
@@ -190,7 +193,7 @@ async def scheduler_in(data, state):
             await edit_database(scheduler_arguments={})
 
 
-def keyboard_builder(tasks_pool, chosen=None, add_save=None, grid=1, price_tag=False, add_dell=True, checks=False, last_button=None, add_money=False, today_tasks=None):
+def keyboard_builder(tasks_pool=None, chosen=None, add_save=None, grid=1, price_tag=False, add_dell=True, checks=False, last_button=None, add_money=False, today_tasks=None):
     data_builder = InlineKeyboardBuilder()
     tasks_pool_builder = InlineKeyboardBuilder()
     if today_tasks is not None:
@@ -207,8 +210,14 @@ def keyboard_builder(tasks_pool, chosen=None, add_save=None, grid=1, price_tag=F
                 else:
                     data_builder.button(text=f"{time} {task} ✔️", callback_data=f"{time}")
     if tasks_pool is not None:
-        for index, job in enumerate(tasks_pool):
-            tasks_pool_builder.button(text=f"{job}", callback_data=f"{index}")
+        for index, task in enumerate(tasks_pool):
+            if chosen is not None:
+                if task in chosen:
+                    data_builder.button(text=f"{task} ✅️", callback_data=f"{index}")
+                else:
+                    data_builder.button(text=f"{task} ✔️", callback_data=f"{index}")
+            else:
+                tasks_pool_builder.button(text=f"{task}", callback_data=f"{index}")
         # else:
         #     product_name = job
         #     price = inp[job]
@@ -228,23 +237,24 @@ def keyboard_builder(tasks_pool, chosen=None, add_save=None, grid=1, price_tag=F
     if add_money:
         d_new_builder.button(text="Начислить 💰", callback_data="Начислить")
     if add_dell:
-        d_new_builder.button(text="💾Сохранить 💾", callback_data="Сохранить")
+        if add_save:
+            d_new_builder.button(text="💾Сохранить 💾", callback_data="Сохранить")
         d_new_builder.button(text="💼Добавить 💼", callback_data="Добавить")
         d_new_builder.button(text="❌Удалить❌", callback_data="Удалить")
     if last_button:
         callback = re.sub(r'[\U0001F000-\U0001FAFF\s]+', '', last_button)
         d_new_builder.button(text=last_button, callback_data=callback)
-        if add_money:
+        if add_money or add_save:
             d_new_builder.adjust(1, 2, 1)
         else:
-            d_new_builder.adjust(1, 2, 1)
+            d_new_builder.adjust(1, 2)
     tasks_pool_builder.adjust(1, 1)
-    if today_tasks is not None:
+    if chosen is not None:
         data_builder.attach(d_new_builder)
         # data_builder.attach(tasks_pool_builder)
         return_builder = data_builder
     else:
-        return_builder = d_new_builder.attach(tasks_pool_builder)
+        return_builder = tasks_pool_builder.attach(d_new_builder)
     return return_builder.as_markup()
 
 
@@ -305,12 +315,12 @@ async def tasks_pool_function(message, state: FSMContext):
 
     # Build the keyboard with the scheduled tasks and the available pool
     keyboard = keyboard_builder(
-        tasks_pool=unscheduled_tasks,
         today_tasks=today_tasks,
         grid=1,
         chosen=daily_chosen_tasks,
         add_dell=True,
-        last_button="🚀Отправить 🚀"
+        last_button="🚀Отправить 🚀",
+        add_save=True,
     )
     if today_tasks:
         await message.answer(
@@ -322,8 +332,6 @@ async def tasks_pool_function(message, state: FSMContext):
             'Ваш список дел пуст! Добавьте их нажав на кнопку "Добавить',
             reply_markup=keyboard
         )
-    # --- MODIFICATION END ---
-
     await state.set_state(ClientState.greet)
 
 async def scheduler_list(message, state, out_message, user_states_data, **kwargs):
@@ -354,7 +362,8 @@ async def start(state, message=None, tasks_pool=None) -> None:
         data['tasks_pool'] = list(set(tasks_pool))
         # --- MODIFICATION START ---
         # The session's schedule starts as a copy of the saved daily schedule.
-        data['today_tasks'] = daily_tasks.copy()
+        if 'today_tasks' not in user_data:
+            data['today_tasks'] = daily_tasks.copy()
         data['daily_tasks'] = daily_tasks.copy()
         # --- MODIFICATION END ---
         data['one_time_jobs'] = one_time_jobs
@@ -386,6 +395,7 @@ async def start(state, message=None, tasks_pool=None) -> None:
             'date_chosen_tasks': [],
             'date_jobs_week_chosen_tasks': [],
             'daily_chosen_tasks': [],
+            'edit_tasks_pool_chosen': [],
         })
         await state.update_data(**data)
 
