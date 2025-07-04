@@ -161,14 +161,17 @@ async def add_tasks_pool(message, state: FSMContext):
     data = message.text
     normalized = re.sub(r'\s*,\s*', ', ', data).split(', ')
     user_data = await state.get_data()
-    call = user_data['call']
+
+
     user_data = await state.get_data()
     tasks_pool = set(user_data['tasks_pool'])
     for word in normalized:
         tasks_pool.add(word)
     tasks_pool = list(tasks_pool)
     keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True)
-    await call.message.edit_reply_markup(reply_markup=keyboard)
+    if 'call' in user_data:
+        call = user_data['call']
+        await call.message.edit_reply_markup(reply_markup=keyboard)
     await state.update_data(tasks_pool=tasks_pool)
     await edit_database(tasks_pool=tasks_pool)
     await message.answer('Ваш список общих дел обновлен!')

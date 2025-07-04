@@ -287,15 +287,18 @@ async def handle_new_user(message: Message, state: FSMContext):
     await message.answer(
         'Вы можете воспользоваться предложенным списком или написать свой. Данные могут быть какие угодно',
         reply_markup=remove_markup)
-    await state.set_state(ClientState.change_tasks_pool_1)
+    await state.set_state(ClientState.add_tasks_pool)
 
 
 @dp.message(lambda message: message.text and message.text.lower() == 'заполнить дневник')
 async def tasks_pool_function(message, state: FSMContext):
     user_data = await state.get_data()
 
-    # --- MODIFICATION START ---
-    tasks_pool_full = user_data.get('tasks_pool', [])
+    tasks_pool = user_data.get('tasks_pool', [])
+    if not tasks_pool:
+        await message.answer('Ваш список дел пуст! Добавьте ваши общие дела через запятую.')
+        await state.set_state(ClientState.add_tasks_pool)
+        return
     today_tasks = user_data.get('today_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
 
@@ -334,8 +337,8 @@ async def scheduler_list(message, state, out_message, user_states_data, **kwargs
 
 
 async def start(state, message=None, tasks_pool=None) -> None:
-    data = {}
     user_data = await state.get_data()
+    data = user_data.copy()
     answer = await create_profile(user_id=message.from_user.id)
     if answer is not None:
         user_id, tasks_pool, one_time_jobs, scheduler_arguments, personal_records, \
