@@ -84,9 +84,6 @@ async def edit_tasks_pool_handler(message: Message, state: FSMContext):
     user_data = await state.get_data()
     tasks_pool = user_data.get('tasks_pool', [])
     edit_tasks_pool_chosen = user_data.get('edit_tasks_pool_chosen', [])
-    if not tasks_pool:
-        await message.answer("Ваш список дел пуст. Сначала добавьте дела.")
-        return
 
     # Инициализируем пустой список для выбранных на удаление задач
     await state.update_data(tasks_to_delete=[])

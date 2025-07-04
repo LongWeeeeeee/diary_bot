@@ -299,19 +299,6 @@ async def tasks_pool_function(message, state: FSMContext):
     today_tasks = user_data.get('today_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
 
-    # Determine which tasks are already in the daily schedule
-    scheduled_task_names = set(today_tasks.values())
-
-    # The pool of available tasks to add are those not already scheduled
-    unscheduled_tasks = [task for task in tasks_pool_full if task not in scheduled_task_names]
-
-    if not today_tasks and not unscheduled_tasks:
-        await message.answer(
-            'У вас пока нет дел. Добавьте их в Настройках или прямо сейчас.',
-            reply_markup=generate_keyboard([], last_button='Добавить дела')  # A new keyboard might be useful
-        )
-        await state.set_state(ClientState.change_tasks_pool_1)  # Go to add state
-        return
 
     # Build the keyboard with the scheduled tasks and the available pool
     keyboard = keyboard_builder(
