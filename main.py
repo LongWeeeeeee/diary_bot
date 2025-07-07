@@ -907,7 +907,7 @@ async def change_one_time_tasks_2(call, state) -> None:
         await edit_database(one_time_tasks=one_time_tasks)
         await state.update_data(one_time_chosen_tasks=[], one_time_tasks=one_time_tasks)
         keyboard = keyboard_builder(tasks_pool=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
-        await call.message.edit_reply_markup(keyboard=keyboard)
+        await call.message.edit_reply_markup(reply_markup=keyboard)
     else:
         data = int(data)
         if one_time_tasks[data] in one_time_chosen_tasks:
