@@ -9,7 +9,7 @@ async def database_start():
     cur = db.cursor()
 
     cur.execute(
-        "CREATE TABLE IF NOT EXISTS profile (user_id TEXT PRIMARY KEY, tasks_pool TEXT, one_time_jobs TEXT,"
+        "CREATE TABLE IF NOT EXISTS profile (user_id TEXT PRIMARY KEY, tasks_pool TEXT, one_time_tasks TEXT,"
         " scheduler_arguments TEXT, personal_records TEXT, previous_diary TEXT, chosen_collected_data TEXT,"
         " notifications_data TEXT, today_tasks TEXT, daily_tasks TEXT)")
 

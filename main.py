@@ -159,37 +159,37 @@ async def add_tasks_pool(message, state: FSMContext):
     data = message.text
     normalized = re.sub(r'\s*,\s*', ', ', data).split(', ')
     user_data = await state.get_data()
-
-
-    user_data = await state.get_data()
-    tasks_pool = set(user_data['tasks_pool'])
+    tasks_pool = user_data.get('tasks_pool', [])
     for word in normalized:
-        tasks_pool.add(word)
-    tasks_pool = list(tasks_pool)
+        tasks_pool.append(word)
+    tasks_pool = list(set(tasks_pool))
     keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True)
     if 'call' in user_data:
         call = user_data['call']
         await call.message.edit_reply_markup(reply_markup=keyboard)
+    else:
+        await message.answer('Ваш список общих дел обновлен!', reply_markup=generate_keyboard(buttons=['В главное меню']))
     await state.update_data(tasks_pool=tasks_pool)
     await edit_database(tasks_pool=tasks_pool)
-    await message.answer('Ваш список общих дел обновлен!')
+
+
 
 
 
 
 @dp.callback_query(ClientState.greet)
-async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext):
+async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=False):
     await call.answer()
     data = call.data
     user_states_data = await state.get_data()
 
     tasks_pool = user_states_data.get('tasks_pool', [])
     today_tasks = user_states_data.get('today_tasks', {})
+    daily_tasks = user_states_data.get('daily_tasks', {})
     daily_chosen_tasks = user_states_data.get('daily_chosen_tasks', [])
-    one_time_jobs = user_states_data.get('one_time_jobs', [])
+    one_time_tasks = user_states_data.get('one_time_tasks', [])
     # --- RECALCULATE UNSCHEDULED TASKS FOR CONTEXT ---
     scheduled_task_names = set(today_tasks.values())
-    unscheduled_tasks = [task for task in tasks_pool if task not in scheduled_task_names]
 
     if data == 'Отправить':
         await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
@@ -238,7 +238,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext):
         await call.message.edit_reply_markup(reply_markup=keyboard)
 
     elif data == 'Добавить':
-        tasks_pool_clear = [i for i in tasks_pool if i not in today_tasks.values()]
+        tasks_pool_clear = [i for i in (tasks_pool+one_time_tasks) if i not in today_tasks.values()]
         keyboard = keyboard_builder(tasks_pool=tasks_pool_clear,
                                     add_dell=False,
                                     )
@@ -280,7 +280,8 @@ async def proceed_tasks_pool_1(call, state: FSMContext) -> None:
     data = int(call.data)
     tasks_pool = user_data.get('tasks_pool', [])
     today_tasks = user_data.get('today_tasks', {})
-    tasks_pool_clear = [i for i in tasks_pool if i not in today_tasks.values()]
+    one_time_tasks = user_data.get('one_time_tasks', [])
+    tasks_pool_clear = [i for i in tasks_pool+one_time_tasks if i not in today_tasks.values()]
     await call.message.answer(f'Вы выбрали: {tasks_pool_clear[data]}\n'
                               f'Введите время в формате ЧЧ:ММ, на которое вы хотите назначить это дело.')
     await state.update_data(temp=tasks_pool_clear[data])
@@ -354,7 +355,7 @@ async def process_about_day(message: Message, state: FSMContext) -> None:
 
 
 @dp.message(ClientState.personal_rate)
-async def process_personal_rate(message: Message, state: FSMContext) -> None:
+async def process_personal_rate(message: Message, state: FSMContext, flag=False) -> None:
     try:
         personal_rate = int(message.text)
         if not (0 <= personal_rate <= 10):
@@ -369,9 +370,16 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
     today_tasks = user_states_data.get('today_tasks', {})
     daily_chosen_tasks_keys = user_states_data.get('daily_chosen_tasks', [])
     activities = [today_tasks[key] for key in daily_chosen_tasks_keys if key in today_tasks]
-
+    daily_chosen_tasks = user_states_data.get('daily_chosen_tasks', {})
+    one_time_tasks = user_states_data.get('one_time_tasks', [])
     # Note: I changed how `activities` is calculated to be more robust
-
+    for time in daily_chosen_tasks:
+        if today_tasks[time] in one_time_tasks:
+            one_time_tasks.remove(today_tasks[time])
+            flag = True
+    if flag:
+        await state.update_data(one_time_tasks=one_time_tasks)
+        await edit_database(one_time_tasks=one_time_tasks)
     data_for_excel = {
         'tasks_pool': user_states_data['tasks_pool'],
         'date': datetime.datetime.now() - datetime.timedelta(days=1),  # Assuming this is for yesterday
@@ -867,57 +875,57 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
 
 
 @dp.message(lambda message: message.text and message.text.lower() == 'разовые дела', ClientState.settings)
-async def change_one_time_jobs(message: Message, state: FSMContext) -> None:
+async def change_one_time_tasks(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
-    one_time_jobs = user_data.get('one_time_jobs', [])
+    one_time_tasks = user_data.get('one_time_tasks', [])
     one_time_chosen_tasks = user_data.get('one_time_chosen_tasks', [])
-    keyboard = keyboard_builder(tasks_pool=one_time_jobs, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+    keyboard = keyboard_builder(tasks_pool=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
     await message.answer('Ваши разовые дела', reply_markup=keyboard)
-    # if one_time_jobs:
+    # if one_time_tasks:
     #     await message.answer(
     #         'Введите разовые дела, которые вы хотели бы добавить через запятую', reply_markup=remove_markup)
     # else:
     #     await message.answer('Введите новый список разовых дел через запятую',
     #                          reply_markup=generate_keyboard(['В Главное Меню']))
-    await state.set_state(ClientState.one_time_jobs_2)
+    await state.set_state(ClientState.one_time_tasks_2)
 
 
-@dp.callback_query(ClientState.one_time_jobs_2)
-async def change_one_time_jobs_2(call, state) -> None:
+@dp.callback_query(ClientState.one_time_tasks_2)
+async def change_one_time_tasks_2(call, state) -> None:
     data = call.data
     user_data = await state.get_data()
-    one_time_jobs = user_data.get('one_time_jobs', [])
+    one_time_tasks = user_data.get('one_time_tasks', [])
     one_time_chosen_tasks = user_data.get('one_time_chosen_tasks', [])
     if data == 'Добавить':
         await call.message.answer('Введите новый список разовых дел через запятую',
                                                       reply_markup=generate_keyboard(['В Главное Меню']))
         await state.update_data(call=call)
-        await state.set_state(ClientState.one_time_jobs_3)
+        await state.set_state(ClientState.one_time_tasks_3)
     elif data == 'Удалить':
         for i in one_time_chosen_tasks:
-            one_time_jobs.remove(i)
-        await edit_database(one_time_jobs=one_time_jobs)
-        await state.update_data(one_time_chosen_tasks=[], one_time_jobs=one_time_jobs)
-        keyboard = keyboard_builder(tasks_pool=one_time_jobs, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+            one_time_tasks.remove(i)
+        await edit_database(one_time_tasks=one_time_tasks)
+        await state.update_data(one_time_chosen_tasks=[], one_time_tasks=one_time_tasks)
+        keyboard = keyboard_builder(tasks_pool=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
         await call.message.edit_reply_markup(keyboard=keyboard)
     else:
         data = int(data)
-        if one_time_jobs[data] in one_time_chosen_tasks:
-            one_time_chosen_tasks.remove(one_time_jobs[data])
+        if one_time_tasks[data] in one_time_chosen_tasks:
+            one_time_chosen_tasks.remove(one_time_tasks[data])
         else:
-            one_time_chosen_tasks.append(one_time_jobs[data])
-        keyboard = keyboard_builder(tasks_pool=one_time_jobs, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+            one_time_chosen_tasks.append(one_time_tasks[data])
+        keyboard = keyboard_builder(tasks_pool=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
         await call.message.edit_reply_markup(reply_markup=keyboard)
 
 
-@dp.message(ClientState.one_time_jobs_3)
-async def change_one_time_jobs_3(message: Message, state: FSMContext) -> None:
+@dp.message(ClientState.one_time_tasks_3)
+async def change_one_time_tasks_3(message: Message, state: FSMContext) -> None:
     user_tasks = normalized(message.text).split(', ')
     user_states_data = await state.get_data()
-    if 'one_time_jobs' in user_states_data:
-        one_time_jobs = user_states_data['one_time_jobs']
+    if 'one_time_tasks' in user_states_data:
+        one_time_tasks = user_states_data['one_time_tasks']
     else:
-        one_time_jobs = []
+        one_time_tasks = []
     for i in user_tasks:
         num = len(i) - 64
         if num > 0:
@@ -925,14 +933,14 @@ async def change_one_time_jobs_3(message: Message, state: FSMContext) -> None:
                 f'"{i}" Должно быть короче на {num} cимвол\nПопробуйте использовать эмодзи 🎸🕺🍫 или разбейте на 2')
             return
         else:
-            one_time_jobs.append(i)
-    one_time_jobs = list(set(one_time_jobs))
+            one_time_tasks.append(i)
+    one_time_tasks = list(set(one_time_tasks))
     one_time_chosen_tasks = user_states_data['one_time_chosen_tasks']
     call = user_states_data.get('call', None)
-    keyboard = keyboard_builder(tasks_pool=one_time_jobs, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+    keyboard = keyboard_builder(tasks_pool=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
     await call.message.edit_reply_markup(reply_markup=keyboard)
-    await edit_database(one_time_jobs=one_time_jobs)
-    await state.update_data(one_time_jobs=one_time_jobs, one_time_chosen_tasks=[])
+    await edit_database(one_time_tasks=one_time_tasks)
+    await state.update_data(one_time_tasks=one_time_tasks, one_time_chosen_tasks=[])
     await call.message.answer('Ваш список разовых дел обновлен')
     # await go_to_main_menu(call.message, state)
 

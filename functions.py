@@ -29,7 +29,7 @@ TARGET_TZ = pytz.timezone('Europe/Moscow')
 class ClientState(StatesGroup):
     greet = State()
     start = State()
-    one_time_jobs_3=State()
+    one_time_tasks_3=State()
     change_tasks_pool_1 = State()
     steps = State()
     total_sleep = State()
@@ -42,8 +42,8 @@ class ClientState(StatesGroup):
     personal_rate = State()
     settings = State()
     download = State()
-    one_time_jobs_2 = State()
-    one_time_jobs_proceed = State()
+    one_time_tasks_2 = State()
+    one_time_tasks_proceed = State()
     date_jobs = State()
     del_date_job = State()
     date_jobs_1 = State()
@@ -346,7 +346,7 @@ async def start(state, message=None, tasks_pool=None) -> None:
     data = user_data.copy()
     answer = await create_profile(user_id=message.from_user.id)
     if answer is not None:
-        user_id, tasks_pool, one_time_jobs, scheduler_arguments, personal_records, \
+        user_id, tasks_pool, one_time_tasks, scheduler_arguments, personal_records, \
             previous_diary, chosen_collected_data, notifications_data, today_tasks_db, daily_tasks = answer[
             0], json.loads(
             answer[1]), json.loads(answer[2]), \
@@ -359,7 +359,7 @@ async def start(state, message=None, tasks_pool=None) -> None:
         # The session's schedule starts as a copy of the saved daily schedule.
         data['daily_tasks'] = daily_tasks.copy()
         # --- MODIFICATION END ---
-        data['one_time_jobs'] = one_time_jobs
+        data['one_time_tasks'] = one_time_tasks
         data['scheduler_arguments'] = scheduler_arguments
 
         if personal_records:
@@ -422,13 +422,13 @@ async def executing_scheduler_job(state, out_message):
     # Я напомню вам : "тес" 14 января 2024
     job = normalized(out_message.split(': ')[1]).replace('"', '')
     try:
-        one_time_jobs = user_states_data['one_time_jobs']
-        one_time_jobs[job] = 300
-        await state.update_data(one_time_jobs=one_time_jobs)
-        await edit_database(one_time_jobs=one_time_jobs)
+        one_time_tasks = user_states_data['one_time_tasks']
+        one_time_tasks[job] = 300
+        await state.update_data(one_time_tasks=one_time_tasks)
+        await edit_database(one_time_tasks=one_time_tasks)
     except KeyError:
-        await state.update_data(one_time_jobs=job)
-        await edit_database(one_time_jobs=job)
+        await state.update_data(one_time_tasks=job)
+        await edit_database(one_time_tasks=job)
 
 
 async def counter_max_days(data, tasks_pool, message, activities, personal_records, output=''):
