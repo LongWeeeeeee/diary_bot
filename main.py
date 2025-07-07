@@ -109,7 +109,7 @@ async def new_today_tasks(message: Message, state: FSMContext = None) -> None:
             hours = int(split_data[0])
             data = split_data[0] + ':00'
         user_data = await state.get_data()
-        today_tasks = user_data['today_tasks']
+        today_tasks = user_data.get('today_tasks', {})
         task = user_data['temp']
         if data in today_tasks:
             await message.answer(f'У вас уже есть задача на {data}')
@@ -280,8 +280,8 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext):
 async def proceed_tasks_pool_1(call, state: FSMContext) -> None:
     user_data = await state.get_data()
     data = int(call.data)
-    tasks_pool = user_data['tasks_pool']
-    today_tasks = user_data['today_tasks']
+    tasks_pool = user_data.get('tasks_pool', [])
+    today_tasks = user_data.get('today_tasks', {})
     tasks_pool_clear = [i for i in tasks_pool if i not in today_tasks.values()]
     await call.message.answer(f'Вы выбрали: {tasks_pool_clear[data]}\n'
                               f'Введите время в формате ЧЧ:ММ, на которое вы хотите назначить это дело.')
@@ -889,7 +889,7 @@ async def change_one_time_jobs_2(message: Message, state: FSMContext) -> None:
     else:
         one_time_jobs = []
     for i in to_add_one_time_jobs:
-        num = len(i) - 55
+        num = len(i) - 64
         if num > 0:
             await message.answer(
                 f'"{i}" Должно быть короче на {num} cимвол\nПопробуйте использовать эмодзи 🎸🕺🍫 или разбейте на 2')

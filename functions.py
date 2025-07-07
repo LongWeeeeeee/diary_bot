@@ -300,12 +300,16 @@ async def tasks_pool_function(message, state: FSMContext):
         await state.set_state(ClientState.add_tasks_pool)
         return
     today_tasks = user_data.get('today_tasks', {})
+    daily_tasks = user_data.get('daily_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
 
-
+    if today_tasks:
+        send_tasks = today_tasks
+    else:
+        send_tasks = daily_tasks
     # Build the keyboard with the scheduled tasks and the available pool
     keyboard = keyboard_builder(
-        today_tasks=today_tasks,
+        today_tasks=send_tasks,
         grid=1,
         chosen=daily_chosen_tasks,
         add_dell=True,
@@ -352,8 +356,6 @@ async def start(state, message=None, tasks_pool=None) -> None:
         data['tasks_pool'] = list(set(tasks_pool))
         # --- MODIFICATION START ---
         # The session's schedule starts as a copy of the saved daily schedule.
-        if 'today_tasks' not in user_data:
-            data['today_tasks'] = daily_tasks.copy()
         data['daily_tasks'] = daily_tasks.copy()
         # --- MODIFICATION END ---
         data['one_time_jobs'] = one_time_jobs
