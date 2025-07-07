@@ -58,10 +58,8 @@ async def settings(message: Message, state: FSMContext = None) -> None:
     user_data = await state.get_data()
     if user_data is not None and isinstance(user_data, dict) and len(user_data):
         user_data = await state.get_data()
-        inp = ['Напоминания', 'Дела в определенную дату', 'Опрашиваемые данные', 'Редактировать список дел']
+        inp = ['Напоминания', 'Дела в определенную дату', 'Опрашиваемые данные', 'Редактировать список дел', 'Разовые дела']
 
-        if not user_data['one_time_jobs']:
-            inp.append('Добавить Разовые Дела')
         if 'personal_records' in user_data:
             inp.append('Мои рекорды')
         if os.path.exists(f'{message.from_user.id}_Diary.xlsx'):
@@ -868,27 +866,59 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
         await message.answer(f'Рассчитанное время {scheduled_dt_aware.strftime("%Y-%m-%d %H:%M %Z%z")} уже в прошлом.')
 
 
-@dp.message(lambda message: message.text and message.text.lower() == 'добавить разовые дела', ClientState.settings)
+@dp.message(lambda message: message.text and message.text.lower() == 'разовые дела', ClientState.settings)
 async def change_one_time_jobs(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
-    if 'one_time_jobs' in user_data:
-        await message.answer(
-            'Введите разовые дела, которые вы хотели бы добавить через запятую', reply_markup=remove_markup)
-    else:
-        await message.answer('Введите новый список разовых дел через запятую',
-                             reply_markup=generate_keyboard(['В Главное Меню']))
+    one_time_jobs = user_data.get('one_time_jobs', [])
+    one_time_chosen_tasks = user_data.get('one_time_chosen_tasks', [])
+    keyboard = keyboard_builder(tasks_pool=one_time_jobs, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+    await message.answer('Ваши разовые дела', reply_markup=keyboard)
+    # if one_time_jobs:
+    #     await message.answer(
+    #         'Введите разовые дела, которые вы хотели бы добавить через запятую', reply_markup=remove_markup)
+    # else:
+    #     await message.answer('Введите новый список разовых дел через запятую',
+    #                          reply_markup=generate_keyboard(['В Главное Меню']))
     await state.set_state(ClientState.one_time_jobs_2)
 
 
-@dp.message(ClientState.one_time_jobs_2)
-async def change_one_time_jobs_2(message: Message, state: FSMContext) -> None:
-    to_add_one_time_jobs = normalized(message.text).split(', ')
+@dp.callback_query(ClientState.one_time_jobs_2)
+async def change_one_time_jobs_2(call, state) -> None:
+    data = call.data
+    user_data = await state.get_data()
+    one_time_jobs = user_data.get('one_time_jobs', [])
+    one_time_chosen_tasks = user_data.get('one_time_chosen_tasks', [])
+    if data == 'Добавить':
+        await call.message.answer('Введите новый список разовых дел через запятую',
+                                                      reply_markup=generate_keyboard(['В Главное Меню']))
+        await state.update_data(call=call)
+        await state.set_state(ClientState.one_time_jobs_3)
+    elif data == 'Удалить':
+        for i in one_time_chosen_tasks:
+            one_time_jobs.remove(i)
+        await edit_database(one_time_jobs=one_time_jobs)
+        await state.update_data(one_time_chosen_tasks=[], one_time_jobs=one_time_jobs)
+        keyboard = keyboard_builder(tasks_pool=one_time_jobs, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+        await call.message.edit_reply_markup(keyboard=keyboard)
+    else:
+        data = int(data)
+        if one_time_jobs[data] in one_time_chosen_tasks:
+            one_time_chosen_tasks.remove(one_time_jobs[data])
+        else:
+            one_time_chosen_tasks.append(one_time_jobs[data])
+        keyboard = keyboard_builder(tasks_pool=one_time_jobs, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+        await call.message.edit_reply_markup(reply_markup=keyboard)
+
+
+@dp.message(ClientState.one_time_jobs_3)
+async def change_one_time_jobs_3(message: Message, state: FSMContext) -> None:
+    user_tasks = normalized(message.text).split(', ')
     user_states_data = await state.get_data()
     if 'one_time_jobs' in user_states_data:
         one_time_jobs = user_states_data['one_time_jobs']
     else:
         one_time_jobs = []
-    for i in to_add_one_time_jobs:
+    for i in user_tasks:
         num = len(i) - 64
         if num > 0:
             await message.answer(
@@ -896,21 +926,16 @@ async def change_one_time_jobs_2(message: Message, state: FSMContext) -> None:
             return
         else:
             one_time_jobs.append(i)
-
+    one_time_jobs = list(set(one_time_jobs))
     one_time_chosen_tasks = user_states_data['one_time_chosen_tasks']
-    if 'one_time_call' in user_states_data:
-        call = user_states_data['one_time_call']
-        keyboard = keyboard_builder(today_tasks=one_time_jobs, chosen=one_time_chosen_tasks, grid=1)
-        await bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=keyboard
-        )
-    else:
-        await message.answer('Отлично! Ваш список разовых дел обновлен')
+    call = user_states_data.get('call', None)
+    keyboard = keyboard_builder(tasks_pool=one_time_jobs, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+    await call.message.edit_reply_markup(reply_markup=keyboard)
     await edit_database(one_time_jobs=one_time_jobs)
-    await state.update_data(one_time_jobs=one_time_jobs)
-    await start(message=message, state=state)
+    await state.update_data(one_time_jobs=one_time_jobs, one_time_chosen_tasks=[])
+    await call.message.answer('Ваш список разовых дел обновлен')
+    # await go_to_main_menu(call.message, state)
+
 
 
 

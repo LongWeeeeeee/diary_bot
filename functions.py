@@ -29,6 +29,7 @@ TARGET_TZ = pytz.timezone('Europe/Moscow')
 class ClientState(StatesGroup):
     greet = State()
     start = State()
+    one_time_jobs_3=State()
     change_tasks_pool_1 = State()
     steps = State()
     total_sleep = State()
