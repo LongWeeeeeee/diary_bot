@@ -355,41 +355,24 @@ async def start(state, message=None, tasks_pool=None) -> None:
             answer[9])  # Note: today_tasks is not used from db, daily_tasks is the source of truth
 
         data['tasks_pool'] = list(set(tasks_pool))
-        # --- MODIFICATION START ---
-        # The session's schedule starts as a copy of the saved daily schedule.
         data['daily_tasks'] = daily_tasks.copy()
-        # --- MODIFICATION END ---
         data['one_time_tasks'] = one_time_tasks
         data['scheduler_arguments'] = scheduler_arguments
-
         if personal_records:
             data['personal_records'] = personal_records
-        if 'job_id' in user_data:
-            data['job_id'] = user_data['job_id']
         data['previous_diary'] = previous_diary
-        data['message'] = message
         data['notifications_data'] = notifications_data
-        data['session_accrued_tasks'] = user_data.get('session_accrued_tasks', [])
         if notifications_data.get('chosen_notifications') == ['Включено'] and not user_data.get('job_id'):
             hours = notifications_data['hours']
             minutes = notifications_data['minutes']
             job_id = scheduler.add_job(
-                tasks_pool,
+                tasks_pool_function,
                 trigger='cron',
                 hour=hours,
                 minute=minutes,
                 args=(message, state))
             data['job_id'] = job_id.id
 
-        data['chosen_collected_data'] = chosen_collected_data
-        data.update({
-            'one_time_chosen_tasks': [],
-            'excel_chosen_tasks': [],
-            'date_chosen_tasks': [],
-            'date_jobs_week_chosen_tasks': [],
-            'daily_chosen_tasks': [],
-            'edit_tasks_pool_chosen': [],
-        })
         await state.update_data(**data)
 
         path = f"{user_id}_Diary.xlsx"
@@ -399,7 +382,6 @@ async def start(state, message=None, tasks_pool=None) -> None:
                 first_button='Заполнить Дневник')
         else:
             keyboard = generate_keyboard(['Заполнить Дневник'], last_button='Настройки')
-
         out_message = ''
         if personal_records:
             record_message = "\n".join(f'{k} : {v}' for k, v in personal_records.items())
@@ -409,7 +391,7 @@ async def start(state, message=None, tasks_pool=None) -> None:
             await message.answer('Главное меню', reply_markup=keyboard)
 
         await scheduler_in(data, state)
-    elif answer is None or not tasks_pool:
+    else:
         await handle_new_user(message, state)
 
 async def executing_scheduler_job(state, out_message):

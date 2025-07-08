@@ -108,7 +108,7 @@ async def new_today_tasks(message: Message, state: FSMContext = None) -> None:
             data = split_data[0] + ':00'
         user_data = await state.get_data()
         today_tasks = user_data.get('today_tasks', {})
-        task = user_data['temp']
+        task = user_data.get('temp', None)
         if data in today_tasks:
             await message.answer(f'У вас уже есть задача на {data}')
             return
@@ -152,6 +152,7 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
             edit_tasks_pool_chosen.append(tasks_pool[data])
         keyboard = keyboard_builder(tasks_pool=tasks_pool, chosen=edit_tasks_pool_chosen, add_dell=True)
         await call.message.edit_reply_markup(reply_markup=keyboard)
+        await state.update_data(edit_tasks_pool_chosen=edit_tasks_pool_chosen)
 
 
 @dp.message(ClientState.add_tasks_pool)
@@ -165,7 +166,7 @@ async def add_tasks_pool(message, state: FSMContext):
     tasks_pool = list(set(tasks_pool))
     keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True)
     if 'call' in user_data:
-        call = user_data['call']
+        call = user_data.get('call', None)
         await call.message.edit_reply_markup(reply_markup=keyboard)
     else:
         await message.answer('Ваш список общих дел обновлен!', reply_markup=generate_keyboard(buttons=['В главное меню']))
@@ -181,19 +182,19 @@ async def add_tasks_pool(message, state: FSMContext):
 async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=False):
     await call.answer()
     data = call.data
-    user_states_data = await state.get_data()
+    user_data = await state.get_data()
 
-    tasks_pool = user_states_data.get('tasks_pool', [])
-    today_tasks = user_states_data.get('today_tasks', {})
-    daily_tasks = user_states_data.get('daily_tasks', {})
-    daily_chosen_tasks = user_states_data.get('daily_chosen_tasks', [])
-    one_time_tasks = user_states_data.get('one_time_tasks', [])
+    tasks_pool = user_data.get('tasks_pool', [])
+    today_tasks = user_data.get('today_tasks', {})
+    daily_tasks = user_data.get('daily_tasks', {})
+    daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
+    one_time_tasks = user_data.get('one_time_tasks', [])
     # --- RECALCULATE UNSCHEDULED TASKS FOR CONTEXT ---
     scheduled_task_names = set(today_tasks.values())
 
     if data == 'Отправить':
         await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
-        collected_data = user_states_data.get('chosen_collected_data', {})
+        collected_data = user_data.get('chosen_collected_data', {})
         if 'Шаги' in collected_data:
             await call.message.answer("Сколько сделал шагов?")
             await state.set_state(ClientState.steps)
@@ -364,14 +365,14 @@ async def process_personal_rate(message: Message, state: FSMContext, flag=False)
         await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
         return
 
-    user_states_data = await state.get_data()
+    user_data = await state.get_data()
 
     # Get activities from the *checked* items in today_tasks, not the whole tasks_pool
-    today_tasks = user_states_data.get('today_tasks', {})
-    daily_chosen_tasks_keys = user_states_data.get('daily_chosen_tasks', [])
+    today_tasks = user_data.get('today_tasks', {})
+    daily_chosen_tasks_keys = user_data.get('daily_chosen_tasks', [])
     activities = [today_tasks[key] for key in daily_chosen_tasks_keys if key in today_tasks]
-    daily_chosen_tasks = user_states_data.get('daily_chosen_tasks', {})
-    one_time_tasks = user_states_data.get('one_time_tasks', [])
+    daily_chosen_tasks = user_data.get('daily_chosen_tasks', {})
+    one_time_tasks = user_data.get('one_time_tasks', [])
     # Note: I changed how `activities` is calculated to be more robust
     for time in daily_chosen_tasks:
         if today_tasks[time] in one_time_tasks:
@@ -381,24 +382,24 @@ async def process_personal_rate(message: Message, state: FSMContext, flag=False)
         await state.update_data(one_time_tasks=one_time_tasks)
         await edit_database(one_time_tasks=one_time_tasks)
     data_for_excel = {
-        'tasks_pool': user_states_data['tasks_pool'],
+        'tasks_pool': user_data['tasks_pool'],
         'date': datetime.datetime.now() - datetime.timedelta(days=1),  # Assuming this is for yesterday
         'activities': activities,
-        'user_message': user_states_data['user_message'],
-        'sleep_quality': user_states_data['sleep_quality'],
-        'my_steps': user_states_data['my_steps'],
+        'user_message': user_data['user_message'],
+        'sleep_quality': user_data['sleep_quality'],
+        'my_steps': user_data['my_steps'],
     }
-    if 'personal_records' in user_states_data:
-        data_for_excel['personal_records'] = user_states_data['personal_records']
+    if 'personal_records' in user_data:
+        data_for_excel['personal_records'] = user_data.get('personal_records', {})
 
     answer = await add_day_to_excel(message=message, personal_rate=personal_rate, **data_for_excel)
     if answer:
         personal_records = answer
         await edit_database(personal_records=personal_records)
 
-    if 'previous_diary' in user_states_data and user_states_data['previous_diary']:
+    if 'previous_diary' in user_data and user_data['previous_diary']:
         try:
-            await bot.delete_message(message.chat.id, user_states_data['previous_diary'])
+            await bot.delete_message(message.chat.id, user_data['previous_diary'])
         except:
             pass  # Ignore if message not found
 
@@ -411,7 +412,7 @@ async def process_personal_rate(message: Message, state: FSMContext, flag=False)
     await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[], session_accrued_tasks=[])
 
     # Re-initialize today_tasks from the saved daily_tasks for the new session
-    saved_daily_tasks = user_states_data.get('daily_tasks', {})
+    saved_daily_tasks = user_data.get('daily_tasks', {})
     await state.update_data(today_tasks=saved_daily_tasks.copy())
 
     # Instead of going to the main menu, show the user their schedule for the next day
@@ -422,8 +423,8 @@ async def process_personal_rate(message: Message, state: FSMContext, flag=False)
 @dp.message(lambda message: message.text and message.text.lower() == 'опрашиваемые данные', ClientState.settings)
 async def collected_data(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
-    chosen_collected_data = user_data['chosen_collected_data']
-    keyboard = keyboard_builder(today_tasks=['Шаги', 'Сон'], add_dell=False, chosen=chosen_collected_data, grid=2, price_tag=False)
+    chosen_collected_data = user_data.get('chosen_collected_data', [])
+    keyboard = keyboard_builder(tasks_pool=['Шаги', 'Сон'], add_dell=False, chosen=chosen_collected_data, grid=2, price_tag=False)
     await message.answer(reply_markup=keyboard, text='Зеленая галочка означает что настройки будут работать,'
                                                      ' серая - что выключены')
     await state.set_state(ClientState.collected_data)
@@ -434,7 +435,7 @@ async def collected_data_proceed(call, state):
     data = int(call.data)
     user_data = await state.get_data()
     if 'chosen_collected_data' in user_data:
-        chosen_collected_data = user_data['chosen_collected_data']
+        chosen_collected_data = user_data.get('chosen_collected_data', [])
         if ['Шаги', 'Сон'][data] in chosen_collected_data:
             chosen_collected_data.remove(['Шаги', 'Сон'][data])
         else:
@@ -444,7 +445,7 @@ async def collected_data_proceed(call, state):
     await state.update_data(chosen_collected_data=chosen_collected_data)
     await state.update_data(daily_chosen_tasks=[])
     await edit_database(chosen_collected_data=chosen_collected_data)
-    keyboard = keyboard_builder(today_tasks=['Шаги', 'Сон'], chosen=chosen_collected_data,
+    keyboard = keyboard_builder(tasks_pool=['Шаги', 'Сон'], chosen=chosen_collected_data,
                                 add_dell=False, grid=2)
     await bot.edit_message_reply_markup(
         chat_id=call.message.chat.id,
@@ -468,7 +469,7 @@ async def my_records(message: Message, state: FSMContext) -> None:
 async def notifications(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     await state.update_data(message=message)
-    notifications_data = user_data['notifications_data']
+    notifications_data = user_data.get('notifications_data', {})
     chosen_notifications = notifications_data.get('chosen_notifications', [])
     inp = ['Включено']
     date_builder = InlineKeyboardBuilder()
@@ -482,7 +483,7 @@ async def notifications(message: Message, state: FSMContext) -> None:
             date_builder.button(text=f"{job} ✔️", callback_data=f"{index}")
     date_builder.button(text=f"{'Выбрать дату'}", callback_data=f"{1}")
     date_builder.adjust(2, 1)
-    notifications_data = user_data['notifications_data']
+    notifications_data = user_data.get('notifications_data', {})
     if notifications_data.get('hours', ''):
         hours = notifications_data['hours']
         minutes = notifications_data['minutes']
@@ -498,8 +499,8 @@ async def notifications(message: Message, state: FSMContext) -> None:
 async def notifications_proceed(call, state):
     data = int(call.data)
     user_data = await state.get_data()
-    message = user_data['message']
-    notifications_data = user_data['notifications_data']
+    message = user_data.get('message', None)
+    notifications_data = user_data.get('notifications_data', {})
     if notifications_data.get('hours', ''):
         hours = notifications_data['hours']
         minutes = notifications_data['minutes']
@@ -556,7 +557,7 @@ async def notifications_proceed(call, state):
 @dp.message(ClientState.notification_set_date)
 async def notification_set_date(message, state):
     user_data = await state.get_data()
-    notifications_data = user_data['notifications_data']
+    notifications_data = user_data.get('notifications_data', {})
     notification_time = message.text.split(':')
     if len(notification_time) != 2:
         await message.answer(f'{message.text} должно быть датой, например 14:20')
@@ -602,7 +603,7 @@ async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
         data = await state.get_data()
         if 'scheduler_arguments' in data:
             output = {key.split('Я напомню вам : ')[1].replace('"', ''):300 for key in data['scheduler_arguments'].keys()}
-            keyboard = keyboard_builder(today_tasks=output, chosen=[])
+            keyboard = keyboard_builder(tasks_pool=output, chosen=[])
             await message.answer('Ваши задачи', reply_markup=keyboard)
             await message.answer(
                 'Для удаления выберите интересующие вас дела и нажмите "Удалить"\n'
@@ -623,9 +624,9 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
 
     if data == 'Удалить':
         await state.update_data(date_jobs_call=call)
-        user_states_data = await state.get_data()
-        date_chosen_tasks = user_states_data['date_chosen_tasks']
-        scheduler_arguments = user_states_data['scheduler_arguments']
+        user_data = await state.get_data()
+        date_chosen_tasks = user_data.get('date_chosen_tasks', [])
+        scheduler_arguments = user_data.get('scheduler_arguments', {})
         for itr in date_chosen_tasks:
             for key in list(scheduler_arguments.keys()):
                 values = scheduler_arguments[key]
@@ -644,24 +645,21 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
                     break
 
         if len(scheduler_arguments) == 0:
-            del user_states_data['scheduler_arguments']
+            del user_data['scheduler_arguments']
             new_ot_builder = InlineKeyboardBuilder()
             new_ot_builder.button(text="💼Добавить 💼", callback_data="Добавить")
             await bot.edit_message_reply_markup(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 reply_markup=new_ot_builder.as_markup())
-            await state.set_data(user_states_data)
+            await state.set_data(user_data)
 
 
         else:
             scheduler_arguments_inp = [key.split('Я напомню вам : ')[1].replace('"', '')
-                                       for key in user_states_data['scheduler_arguments']]
+                                       for key in user_data['scheduler_arguments']]
             keyboard = keyboard_builder(today_tasks=scheduler_arguments_inp, chosen=date_chosen_tasks, price_tag=False)
-            await bot.edit_message_reply_markup(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                reply_markup=keyboard)
+            await call.message.edit_reply_markup(reply_markup=keyboard)
 
         await state.update_data(scheduler_arguments=scheduler_arguments, date_chosen_tasks=[])
         await edit_database(scheduler_arguments=scheduler_arguments)
@@ -673,20 +671,17 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
 
     else:
         data = data
-        user_states_data = await state.get_data()
+        user_data = await state.get_data()
         scheduler_arguments = {key.split('Я напомню вам : ')[1].replace('"', ''):300
-                               for key in user_states_data['scheduler_arguments'].keys()}
-        date_chosen_tasks = user_states_data['date_chosen_tasks']
+                               for key in user_data['scheduler_arguments'].keys()}
+        date_chosen_tasks = user_data.get('date_chosen_tasks', [])
         if data in date_chosen_tasks:
             date_chosen_tasks.remove(data)
         else:
             date_chosen_tasks.append(data)
         await state.update_data(date_chosen_tasks=date_chosen_tasks)
         keyboard = keyboard_builder(today_tasks=scheduler_arguments, chosen=date_chosen_tasks)
-        await bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=keyboard)
+        await call.message.edit_reply_markup(reply_markup=keyboard)
 
 
 @dp.message(ClientState.date_jobs_1)
@@ -701,8 +696,8 @@ async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
 async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
     user_message = normalized(message.text)
     if user_message == 'в день недели':
-        keyboard = keyboard_builder(today_tasks=['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу',
-                                         'воскресенье'], grid=1, add_dell=False, price_tag=False, chosen=[])
+        keyboard = keyboard_builder(tasks_pool=['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу',
+                                         'воскресенье'], grid=1, add_dell=False, price_tag=False, chosen=[], last_button="🚀Отправить 🚀")
         await message.answer(
             'В какой день недели?', reply_markup=keyboard)
         await message.answer('можно выбрать сразу несколько', reply_markup=generate_keyboard(buttons=['В Главное Меню']))
@@ -729,103 +724,99 @@ async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
 async def date_jobs_week(call: types.CallbackQuery, state: FSMContext) -> None:
     await call.answer()
     data = call.data
-    user_states_data = await state.get_data()
-    message = user_states_data['message']
+    user_data = await state.get_data()
 
     date_jobs_week_list = ['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу',
      'воскресенье']
-    date_jobs_week_chosen_tasks = user_states_data['date_jobs_week_chosen_tasks']
+    date_jobs_week_chosen_tasks = user_data.get('date_jobs_week_chosen_tasks', [])
     if data == 'Отправить':
         if len(date_jobs_week_chosen_tasks) != 0:
-            new_date_jobs = user_states_data['new_date_jobs']
+            new_date_jobs = user_data.get('new_date_jobs', {})
             for day in date_jobs_week_chosen_tasks:
                 day_of_week = translate[day]
                 out_message = f'Я напомню вам : "{new_date_jobs}" {day_to_prefix(day)} {day}'
-                await scheduler_list(call, state, out_message, user_states_data, trigger="cron",
+                await scheduler_list(call, state, out_message, user_data, trigger="cron",
                                      day_of_week=day_of_week,
                                      args=new_date_jobs)
             all_days = ''.join(f'\n{day_to_prefix(day)} {day}' for day in date_jobs_week_chosen_tasks)
             out_message = f'Я напомню вам "{new_date_jobs}":{all_days}'
             await call.message.answer(out_message)
             await state.update_data(date_jobs_week_chosen_tasks=[])
-            await start(message=message, state=state)
+            await start(message=call.message, state=state)
 
             # global_out_message = f'Я напомню вам : "{new_date_jobs}":\n {(day_to_prefix(day) for day in date_jobs_week_chosen_tasks)} {day}'
     else:
         data = call.data
         data = date_jobs_week_list[int(data)]
-        date_jobs_week_chosen_tasks = user_states_data['date_jobs_week_chosen_tasks']
+        date_jobs_week_chosen_tasks = user_data.get('date_jobs_week_chosen_tasks', [])
 
         if data in date_jobs_week_chosen_tasks:
             date_jobs_week_chosen_tasks.remove(data)
         else:
             date_jobs_week_chosen_tasks.append(data)
 
-        keyboard = keyboard_builder(today_tasks=date_jobs_week_list, chosen=date_jobs_week_chosen_tasks, grid=1, add_dell=False, price_tag=False)
-        await bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=keyboard)
+        keyboard = keyboard_builder(tasks_pool=date_jobs_week_list, chosen=date_jobs_week_chosen_tasks, grid=1, add_dell=False, price_tag=False, last_button="🚀Отправить 🚀")
+        await call.message.edit_reply_markup(reply_markup=keyboard)
         await state.update_data(date_jobs_week_chosen_tasks=date_jobs_week_chosen_tasks)
 
 
 # @dp.message(ClientState.date_jobs_week)
 # async def date_jobs_week(message: Message, state: FSMContext) -> None:
 #     user_message = normalized(message.text)
-#     user_states_data = await state.get_data()
-#     new_date_jobs = user_states_data['new_date_jobs']
+#     user_data = await state.get_data()
+#     new_date_jobs = user_data.get('new_date_jobs']
 #     day_of_week = translate[user_message]
 #     out_message = f'Я напомню вам : "{new_date_jobs}" {day_to_prefix(user_message)} {user_message}'
 #     # now = datetime.datetime.now(ZoneInfo("Europe/Moscow"))
 #     # hours = now.hour
 #     # minutes = (now + timedelta(minutes=1)).minute
-#     # await scheduler_list(message, state, out_message, user_states_data, trigger="cron",
+#     # await scheduler_list(message, state, out_message, user_data, trigger="cron",
 #     #                      day_of_week=day_of_week,
 #                          # args=new_date_jobs, .hour=hours, minute=minutes)
-#     await scheduler_list(message, state, out_message, user_states_data, trigger="cron",
+#     await scheduler_list(message, state, out_message, user_data, trigger="cron",
 #                          day_of_week=day_of_week,
 #                          args=new_date_jobs)
 #
-#     # if 'call' in user_states_data:
+#     # if 'call' in user_data:
 #     #     await rebuild_keyboard(state, 'date_chosen_tasks')
 
 
 @dp.message(ClientState.date_jobs_month)
 async def date_jobs_month(message: Message, state: FSMContext) -> None:
-    user_states_data = await state.get_data()
-    new_date_jobs = user_states_data['new_date_jobs']
+    user_data = await state.get_data()
+    new_date_jobs = user_data.get('new_date_jobs', {})
     day_of_month = message.text
     out_message = f'Я напомню вам : "{new_date_jobs}" каждый {day_of_month} день месяца'
     # now = datetime.datetime.now()
     # hours = now.hour
     # minutes = (now + timedelta(minutes=2)).minute
-    await scheduler_list(message, state, out_message, user_states_data, day=day_of_month, trigger="cron",
+    await scheduler_list(message, state, out_message, user_data, day=day_of_month, trigger="cron",
                          args=new_date_jobs)
     await start(message=message, state=state)
-    # if 'call' in user_states_data:
+    # if 'call' in user_data:
     #     await rebuild_keyboard(state, 'date_chosen_tasks')
 
 
 @dp.message(ClientState.date_jobs_year)
 async def date_jobs_year(message: Message, state: FSMContext) -> None:
-    user_states_data = await state.get_data()
-    new_date_jobs = user_states_data['new_date_jobs']
+    user_data = await state.get_data()
+    new_date_jobs = user_data.get('new_date_jobs', {})
     date = datetime.datetime.strptime(message.text, '%d-%m')
     # now = datetime.datetime.now()
     # hours = now.hour
     # minutes = (now + timedelta(minutes=2)).minute
     out_message = f'Я напомню вам : "{new_date_jobs}" каждое {date.day} {date.strftime("%B")}'
-    await scheduler_list(message, state, out_message, user_states_data, trigger="cron", day=date.day, month=date.month,
+    await scheduler_list(message, state, out_message, user_data, trigger="cron", day=date.day, month=date.month,
                          args=new_date_jobs)
     await start(message=message, state=state)
-    # if 'call' in user_states_data:
+    # if 'call' in user_data:
     #     await rebuild_keyboard(state, 'date_chosen_tasks')
 
 
 @dp.message(ClientState.date_jobs_once)
 async def date_jobs_once(message: Message, state: FSMContext) -> None:
-    user_states_data = await state.get_data()
-    new_date_jobs = user_states_data.get('new_date_jobs', 'Напоминание') # Безопасное получение
+    user_data = await state.get_data()
+    new_date_jobs = user_data.get('new_date_jobs', 'Напоминание') # Безопасное получение
 
     try:
         # Получаем только дату, время будет текущим
@@ -860,7 +851,7 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
         # принимает и использует aware datetime объект.
         # НЕ передавайте строку strftime!
         try:
-            await scheduler_list(message, state, out_message, user_states_data, trigger="date",
+            await scheduler_list(message, state, out_message, user_data, trigger="date",
                                  run_date=scheduled_dt_aware.strftime("%Y-%m-%d %H:%M"),
                                  args=new_date_jobs)
 
@@ -921,11 +912,9 @@ async def change_one_time_tasks_2(call, state) -> None:
 @dp.message(ClientState.one_time_tasks_3)
 async def change_one_time_tasks_3(message: Message, state: FSMContext) -> None:
     user_tasks = normalized(message.text).split(', ')
-    user_states_data = await state.get_data()
-    if 'one_time_tasks' in user_states_data:
-        one_time_tasks = user_states_data['one_time_tasks']
-    else:
-        one_time_tasks = []
+    user_data = await state.get_data()
+    one_time_tasks = user_data.get('one_time_tasks', [])
+    one_time_chosen_tasks = user_data.get('one_time_chosen_tasks', [])
     for i in user_tasks:
         num = len(i) - 64
         if num > 0:
@@ -935,8 +924,7 @@ async def change_one_time_tasks_3(message: Message, state: FSMContext) -> None:
         else:
             one_time_tasks.append(i)
     one_time_tasks = list(set(one_time_tasks))
-    one_time_chosen_tasks = user_states_data['one_time_chosen_tasks']
-    call = user_states_data.get('call', None)
+    call = user_data.get('call', None)
     keyboard = keyboard_builder(tasks_pool=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
     await call.message.edit_reply_markup(reply_markup=keyboard)
     await edit_database(one_time_tasks=one_time_tasks)
