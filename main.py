@@ -350,7 +350,7 @@ async def process_about_day(message: Message, state: FSMContext) -> None:
 
 
 @dp.message(ClientState.personal_rate)
-async def process_personal_rate(message: Message, state: FSMContext, flag=False) -> None:
+async def process_personal_rate(message: Message, state: FSMContext) -> None:
     try:
         personal_rate = int(message.text)
         if not (0 <= personal_rate <= 10):
@@ -365,7 +365,7 @@ async def process_personal_rate(message: Message, state: FSMContext, flag=False)
 
 
 @dp.callback_query(ClientState.personal_rate_1)
-async def personal_rate_1(call, state) -> None:
+async def personal_rate_1(call, state, flag=False) -> None:
     await call.answer()
     user_data = await state.get_data()
     data = call.data
