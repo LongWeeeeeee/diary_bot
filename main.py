@@ -588,7 +588,7 @@ async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
         # locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
         data = await state.get_data()
         if 'scheduler_arguments' in data:
-            output = {key.split('Я напомню вам : ')[1].replace('"', ''):300 for key in data['scheduler_arguments'].keys()}
+            output = [key.split('Я напомню вам : ')[1].replace('"', '') for key in data['scheduler_arguments'].keys()]
             keyboard = keyboard_builder(tasks_pool=output, chosen=[])
             await message.answer('Ваши задачи', reply_markup=keyboard)
             await message.answer(
@@ -644,7 +644,7 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         else:
             scheduler_arguments_inp = [key.split('Я напомню вам : ')[1].replace('"', '')
                                        for key in user_data['scheduler_arguments']]
-            keyboard = keyboard_builder(today_tasks=scheduler_arguments_inp, chosen=date_chosen_tasks, price_tag=False)
+            keyboard = keyboard_builder(tasks_pool=scheduler_arguments_inp, chosen=date_chosen_tasks, price_tag=False)
             await call.message.edit_reply_markup(reply_markup=keyboard)
 
         await state.update_data(scheduler_arguments=scheduler_arguments, date_chosen_tasks=[])
@@ -656,15 +656,15 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         await state.set_state(ClientState.date_jobs_1)
 
     else:
-        data = data
+        data = int(data)
         user_data = await state.get_data()
-        scheduler_arguments = {key.split('Я напомню вам : ')[1].replace('"', '')
-                               for key in user_data['scheduler_arguments'].keys()}
+        scheduler_arguments = [key.split('Я напомню вам : ')[1].replace('"', '')
+                               for key in user_data['scheduler_arguments'].keys()]
         date_chosen_tasks = user_data.get('date_chosen_tasks', [])
-        if data in date_chosen_tasks:
-            date_chosen_tasks.remove(data)
+        if scheduler_arguments[data] in date_chosen_tasks:
+            date_chosen_tasks.remove(scheduler_arguments[data])
         else:
-            date_chosen_tasks.append(data)
+            date_chosen_tasks.append(scheduler_arguments[data])
         await state.update_data(date_chosen_tasks=date_chosen_tasks)
         keyboard = keyboard_builder(tasks_pool=scheduler_arguments, chosen=date_chosen_tasks, add_dell=True)
         await call.message.edit_reply_markup(reply_markup=keyboard)
