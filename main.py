@@ -186,11 +186,8 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
 
     tasks_pool = user_data.get('tasks_pool', [])
     today_tasks = user_data.get('today_tasks', {})
-    daily_tasks = user_data.get('daily_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
     one_time_tasks = user_data.get('one_time_tasks', [])
-    # --- RECALCULATE UNSCHEDULED TASKS FOR CONTEXT ---
-    scheduled_task_names = set(today_tasks.values())
 
     if data == 'Отправить':
         await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
@@ -364,9 +361,8 @@ async def process_personal_rate(message: Message, state: FSMContext, flag=False)
     except ValueError:
         await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
         return
-
+    db_updates = {}
     user_data = await state.get_data()
-
     # Get activities from the *checked* items in today_tasks, not the whole tasks_pool
     today_tasks = user_data.get('today_tasks', {})
     daily_chosen_tasks_keys = user_data.get('daily_chosen_tasks', [])
@@ -380,7 +376,7 @@ async def process_personal_rate(message: Message, state: FSMContext, flag=False)
             flag = True
     if flag:
         await state.update_data(one_time_tasks=one_time_tasks)
-        await edit_database(one_time_tasks=one_time_tasks)
+        db_updates['one_time_tasks']=one_time_tasks
     data_for_excel = {
         'tasks_pool': user_data['tasks_pool'],
         'date': datetime.datetime.now() - datetime.timedelta(days=1),  # Assuming this is for yesterday
@@ -393,31 +389,21 @@ async def process_personal_rate(message: Message, state: FSMContext, flag=False)
         data_for_excel['personal_records'] = user_data.get('personal_records', {})
 
     answer = await add_day_to_excel(message=message, personal_rate=personal_rate, **data_for_excel)
-    if answer:
-        personal_records = answer
-        await edit_database(personal_records=personal_records)
-
-    if 'previous_diary' in user_data and user_data['previous_diary']:
-        try:
-            await bot.delete_message(message.chat.id, user_data['previous_diary'])
-        except:
-            pass  # Ignore if message not found
-
     send_message = await download_diary(message, state)
     if send_message:
-        await edit_database(previous_diary=send_message.message_id)
-
-    # --- MODIFICATION START ---
-    # Clean up session-specific data
-    await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[], session_accrued_tasks=[])
-
-    # Re-initialize today_tasks from the saved daily_tasks for the new session
+        db_updates['previous_diary']=send_message.message_id
+    if answer:
+        db_updates['personal_records'] = answer
+    if db_updates:
+        await edit_database(**db_updates)
+    previous_diary = user_data.get('previous_diary', None)
+    if previous_diary:
+        try:
+            await bot.delete_message(message.chat.id, previous_diary)
+        except:pass
     saved_daily_tasks = user_data.get('daily_tasks', {})
-    await state.update_data(today_tasks=saved_daily_tasks.copy())
-
-    # Instead of going to the main menu, show the user their schedule for the next day
+    await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[], session_accrued_tasks=[], today_tasks=saved_daily_tasks.copy())
     await tasks_pool_function(message, state)
-    # --- MODIFICATION END ---
 
 
 @dp.message(lambda message: message.text and message.text.lower() == 'опрашиваемые данные', ClientState.settings)
