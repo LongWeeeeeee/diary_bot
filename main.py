@@ -191,9 +191,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
     one_time_tasks = user_data.get('one_time_tasks', [])
     daily_tasks = user_data.get('daily_tasks', {})
-    if not today_tasks:
-        today_tasks = daily_tasks
-        await state.update_data(today_tasks=today_tasks)
+
     if data == 'Отправить':
         await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
         collected_data = user_data.get('chosen_collected_data', {})

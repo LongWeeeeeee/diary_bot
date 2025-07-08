@@ -310,6 +310,7 @@ async def tasks_pool_function(message, state: FSMContext):
 
     if not today_tasks:
         today_tasks = daily_tasks
+        await state.update_data(today_tasks=today_tasks)
     # Build the keyboard with the scheduled tasks and the available pool
     keyboard = keyboard_builder(
         today_tasks=today_tasks,
