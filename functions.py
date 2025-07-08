@@ -29,6 +29,7 @@ TARGET_TZ = pytz.timezone('Europe/Moscow')
 class ClientState(StatesGroup):
     greet = State()
     start = State()
+    personal_rate_1 = State()
     one_time_tasks_3=State()
     change_tasks_pool_1 = State()
     steps = State()
@@ -78,7 +79,7 @@ translate = {'понедельник': 'mon', 'вторник': 'tue', 'сред
 async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_rate: float,
                            my_steps: int,
                            tasks_pool: list,
-                           user_message: str, message, excel_chosen_tasks=None, personal_records=None):
+                           user_message: str, message, excel_chosen_tasks=None, personal_records=None, today=None):
     path = str(message.from_user.id) + '_Diary.xlsx'
     try:
         data = pd.read_excel(path)
@@ -86,7 +87,10 @@ async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_
         data = pd.DataFrame(columns=['Дата', 'Дела за день', 'Шаги', 'Sleep quality', 'О дне', 'My rate'])
 
     last_row = data.index.max() + 1
-    yesterday = date
+    if today:
+        yesterday = date
+    else:
+        yesterday = date - timedelta(days=1)
     data.loc[last_row, 'Дата'] = yesterday.strftime("%d.%m.%Y")
     data.loc[last_row, 'Дела за день'] = ", ".join(activities)
     data.loc[last_row, 'Шаги'] = my_steps
@@ -194,7 +198,7 @@ async def scheduler_in(data, state):
             await edit_database(scheduler_arguments={})
 
 
-def keyboard_builder(tasks_pool=None, chosen=None, add_save=None, grid=1, price_tag=False, add_dell=True, checks=False, last_button=None, add_money=False, today_tasks=None):
+def keyboard_builder(tasks_pool=None, chosen=None, add_save=None, grid=1, price_tag=False, add_dell=False, checks=False, last_button=None, add_money=False, today_tasks=None):
     data_builder = InlineKeyboardBuilder()
     tasks_pool_builder = InlineKeyboardBuilder()
     if today_tasks is not None:
@@ -304,13 +308,11 @@ async def tasks_pool_function(message, state: FSMContext):
     daily_tasks = user_data.get('daily_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
 
-    if today_tasks:
-        send_tasks = today_tasks
-    else:
-        send_tasks = daily_tasks
+    if not today_tasks:
+        today_tasks = daily_tasks
     # Build the keyboard with the scheduled tasks and the available pool
     keyboard = keyboard_builder(
-        today_tasks=send_tasks,
+        today_tasks=today_tasks,
         grid=1,
         chosen=daily_chosen_tasks,
         add_dell=True,

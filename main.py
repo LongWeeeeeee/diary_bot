@@ -1,3 +1,5 @@
+from asyncio import tasks
+
 from aiogram.types.error_event import ErrorEvent
 from aiogram.types import BufferedInputFile
 import asyncio
@@ -188,7 +190,10 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
     today_tasks = user_data.get('today_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
     one_time_tasks = user_data.get('one_time_tasks', [])
-
+    daily_tasks = user_data.get('daily_tasks', {})
+    if not today_tasks:
+        today_tasks = daily_tasks
+        await state.update_data(today_tasks=today_tasks)
     if data == 'Отправить':
         await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
         collected_data = user_data.get('chosen_collected_data', {})
@@ -247,33 +252,27 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         await state.update_data(call=call)
         await state.set_state(ClientState.change_tasks_pool_1)
 
-    else:  # This block handles both checking a scheduled task and adding a new one
-            # --- Case 2: A scheduled task was clicked (data is the time string) ---
-            # This is for marking a task as done/not done
-            if data in daily_chosen_tasks:
-                daily_chosen_tasks.remove(data)
-            else:
-                daily_chosen_tasks.append(data)
+    else:
+        if data in daily_chosen_tasks:
+            daily_chosen_tasks.remove(data)
+        else:
+            daily_chosen_tasks.append(data)
+        await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
 
-            await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
-
-            # Rebuild keyboard to show the checkmark
-            keyboard = keyboard_builder(
-                today_tasks=today_tasks,
-                chosen=daily_chosen_tasks,
-                grid=1,
-                add_dell=True,
-                last_button="🚀Отправить 🚀",
-                add_save=True,
-            )
-            await bot.edit_message_reply_markup(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                reply_markup=keyboard
-            )
+        # Rebuild keyboard to show the checkmark
+        keyboard = keyboard_builder(
+            today_tasks=today_tasks,
+            chosen=daily_chosen_tasks,
+            grid=1,
+            add_dell=True,
+            last_button="🚀Отправить 🚀",
+            add_save=True,
+        )
+        await call.message.edit_reply_markup(reply_markup=keyboard)
 
 @dp.callback_query(ClientState.change_tasks_pool_1)
 async def proceed_tasks_pool_1(call, state: FSMContext) -> None:
+    await call.answer()
     user_data = await state.get_data()
     data = int(call.data)
     tasks_pool = user_data.get('tasks_pool', [])
@@ -361,25 +360,39 @@ async def process_personal_rate(message: Message, state: FSMContext, flag=False)
     except ValueError:
         await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
         return
-    db_updates = {}
+    await state.update_data(personal_rate=personal_rate, message=message)
+    await message.answer('За вчера или за сегодня?', reply_markup=keyboard_builder(tasks_pool=['За вчера', 'За сегодня'], grid=2))
+    await state.set_state(ClientState.personal_rate_1)
+
+
+
+@dp.callback_query(ClientState.personal_rate_1)
+async def personal_rate_1(call, state) -> None:
+    await call.answer()
     user_data = await state.get_data()
-    # Get activities from the *checked* items in today_tasks, not the whole tasks_pool
+    data = call.data
+    if data == '0':
+        today=False
+    else:
+        today=True
+    db_updates = {}
     today_tasks = user_data.get('today_tasks', {})
     daily_chosen_tasks_keys = user_data.get('daily_chosen_tasks', [])
     activities = [today_tasks[key] for key in daily_chosen_tasks_keys if key in today_tasks]
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', {})
     one_time_tasks = user_data.get('one_time_tasks', [])
-    # Note: I changed how `activities` is calculated to be more robust
+    personal_rate = user_data.get('personal_rate', None)
+    message = user_data.get('message', None)
     for time in daily_chosen_tasks:
         if today_tasks[time] in one_time_tasks:
             one_time_tasks.remove(today_tasks[time])
             flag = True
     if flag:
         await state.update_data(one_time_tasks=one_time_tasks)
-        db_updates['one_time_tasks']=one_time_tasks
+        db_updates['one_time_tasks'] = one_time_tasks
     data_for_excel = {
         'tasks_pool': user_data['tasks_pool'],
-        'date': datetime.datetime.now() - datetime.timedelta(days=1),  # Assuming this is for yesterday
+        'date': datetime.datetime.now(),  # Assuming this is for yesterday
         'activities': activities,
         'user_message': user_data['user_message'],
         'sleep_quality': user_data['sleep_quality'],
@@ -388,10 +401,10 @@ async def process_personal_rate(message: Message, state: FSMContext, flag=False)
     if 'personal_records' in user_data:
         data_for_excel['personal_records'] = user_data.get('personal_records', {})
 
-    answer = await add_day_to_excel(message=message, personal_rate=personal_rate, **data_for_excel)
+    answer = await add_day_to_excel(message=message, personal_rate=personal_rate, **data_for_excel, today=today)
     send_message = await download_diary(message, state)
     if send_message:
-        db_updates['previous_diary']=send_message.message_id
+        db_updates['previous_diary'] = send_message.message_id
     if answer:
         db_updates['personal_records'] = answer
     if db_updates:
@@ -400,9 +413,11 @@ async def process_personal_rate(message: Message, state: FSMContext, flag=False)
     if previous_diary:
         try:
             await bot.delete_message(message.chat.id, previous_diary)
-        except:pass
+        except:
+            pass
     saved_daily_tasks = user_data.get('daily_tasks', {})
-    await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[], session_accrued_tasks=[], today_tasks=saved_daily_tasks.copy())
+    await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[], session_accrued_tasks=[],
+                            today_tasks=saved_daily_tasks.copy())
     await tasks_pool_function(message, state)
 
 
@@ -418,6 +433,7 @@ async def collected_data(message: Message, state: FSMContext) -> None:
 
 @dp.callback_query(ClientState.collected_data)
 async def collected_data_proceed(call, state):
+    await call.answer()
     data = int(call.data)
     user_data = await state.get_data()
     if 'chosen_collected_data' in user_data:
@@ -483,6 +499,7 @@ async def notifications(message: Message, state: FSMContext) -> None:
 
 @dp.callback_query(ClientState.notification_proceed)
 async def notifications_proceed(call, state):
+    await call.answer()
     data = int(call.data)
     user_data = await state.get_data()
     message = user_data.get('message', None)
@@ -869,6 +886,7 @@ async def change_one_time_tasks(message: Message, state: FSMContext) -> None:
 
 @dp.callback_query(ClientState.one_time_tasks_2)
 async def change_one_time_tasks_2(call, state) -> None:
+    await call.answer()
     data = call.data
     user_data = await state.get_data()
     one_time_tasks = user_data.get('one_time_tasks', [])
