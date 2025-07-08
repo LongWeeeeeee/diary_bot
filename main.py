@@ -416,7 +416,7 @@ async def personal_rate_1(call, state, flag=False) -> None:
     saved_daily_tasks = user_data.get('daily_tasks', {})
     await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[], session_accrued_tasks=[],
                             today_tasks=saved_daily_tasks.copy())
-    await tasks_pool_function(message, state)
+    await start(message=message, state=state)
 
 
 @dp.message(lambda message: message.text and message.text.lower() == 'опрашиваемые данные', ClientState.settings)
