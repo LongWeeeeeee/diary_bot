@@ -329,11 +329,11 @@ async def tasks_pool_function(message, state: FSMContext):
         )
     await state.set_state(ClientState.greet)
 
-async def scheduler_list(message, state, out_message, user_states_data, **kwargs):
+async def scheduler_list(message, state, out_message, user_data, **kwargs):
     # загрузка аргументов в database
     await message.answer(out_message)
     try:
-        scheduler_arguments = user_states_data['scheduler_arguments']
+        scheduler_arguments = user_data.get('scheduler_arguments', {})
         scheduler_arguments[out_message] = {**kwargs}
     except KeyError:
         scheduler_arguments = {out_message: {**kwargs}}
@@ -394,23 +394,42 @@ async def start(state, message=None, tasks_pool=None) -> None:
     else:
         await handle_new_user(message, state)
 
+
 async def executing_scheduler_job(state, out_message):
     # функция, которая срабатывает, когда срабатывает scheduler
     user_states_data = await state.get_data()
-    scheduler_arguments = user_states_data['scheduler_arguments']
-    if scheduler_arguments[out_message]['trigger'] == 'date':
-        del scheduler_arguments[out_message]
-        await edit_database(scheduler_arguments=scheduler_arguments)
-    # Я напомню вам : "тес" 14 января 2024
-    job = normalized(out_message.split(': ')[1]).replace('"', '')
+
+    # Безопасно получаем название задачи из сообщения
     try:
-        one_time_tasks = user_states_data['one_time_tasks']
-        one_time_tasks[job] = 300
-        await state.update_data(one_time_tasks=one_time_tasks)
-        await edit_database(one_time_tasks=one_time_tasks)
-    except KeyError:
-        await state.update_data(one_time_tasks=job)
-        await edit_database(one_time_tasks=job)
+        job_text = normalized(out_message.split(' : ')[1]).replace('"', '')
+    except IndexError:
+        print(f"Error parsing job text from: {out_message}")
+        return
+
+    # 1. Безопасно получаем список one_time_tasks из состояния
+    # Если его нет, создаем пустой список
+    one_time_tasks = user_states_data.get('one_time_tasks', [])
+
+    # 2. Добавляем новую задачу в список, если её там ещё нет
+    if job_text not in one_time_tasks:
+        one_time_tasks.append(job_text)
+
+    # 3. Обновляем состояние и базу данных
+    await state.update_data(one_time_tasks=one_time_tasks)
+    # Предполагаем, что edit_database требует user_id, как в предыдущей рекомендации.
+    # Если нет, используйте ваш текущий вызов.
+    user_id = state.key.user_id
+    await edit_database(user_id=user_id, one_time_tasks=one_time_tasks)
+
+    # 4. Если это было разовое напоминание (trigger='date'), удаляем его из scheduler_arguments
+    scheduler_arguments = user_states_data.get('scheduler_arguments', {})
+    if out_message in scheduler_arguments and scheduler_arguments[out_message].get('trigger') == 'date':
+        del scheduler_arguments[out_message]
+        await state.update_data(scheduler_arguments=scheduler_arguments)
+        await edit_database(user_id=user_id, scheduler_arguments=scheduler_arguments)
+
+    print(f"Successfully added scheduled task '{job_text}' to one_time_tasks for user {user_id}")
+
 
 
 async def counter_max_days(data, tasks_pool, message, activities, personal_records, output=''):
