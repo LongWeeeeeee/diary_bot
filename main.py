@@ -583,7 +583,7 @@ async def notification_set_date(message, state):
 @dp.message(lambda message: message.text and message.text.lower() == 'дела в определенную дату', ClientState.settings)
 async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
-
+    await state.update_data(message=message)
     if user_data is not None and isinstance(user_data, dict) and len(user_data):
         # locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
         data = await state.get_data()
@@ -658,7 +658,7 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
     else:
         data = data
         user_data = await state.get_data()
-        scheduler_arguments = {key.split('Я напомню вам : ')[1].replace('"', ''):300
+        scheduler_arguments = {key.split('Я напомню вам : ')[1].replace('"', '')
                                for key in user_data['scheduler_arguments'].keys()}
         date_chosen_tasks = user_data.get('date_chosen_tasks', [])
         if data in date_chosen_tasks:
@@ -666,7 +666,7 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         else:
             date_chosen_tasks.append(data)
         await state.update_data(date_chosen_tasks=date_chosen_tasks)
-        keyboard = keyboard_builder(today_tasks=scheduler_arguments, chosen=date_chosen_tasks)
+        keyboard = keyboard_builder(tasks_pool=scheduler_arguments, chosen=date_chosen_tasks, add_dell=True)
         await call.message.edit_reply_markup(reply_markup=keyboard)
 
 
@@ -711,7 +711,7 @@ async def date_jobs_week(call: types.CallbackQuery, state: FSMContext) -> None:
     await call.answer()
     data = call.data
     user_data = await state.get_data()
-
+    message = user_data.get('message', None)
     date_jobs_week_list = ['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу',
      'воскресенье']
     date_jobs_week_chosen_tasks = user_data.get('date_jobs_week_chosen_tasks', [])
@@ -728,7 +728,7 @@ async def date_jobs_week(call: types.CallbackQuery, state: FSMContext) -> None:
             out_message = f'Я напомню вам "{new_date_jobs}":{all_days}'
             await call.message.answer(out_message)
             await state.update_data(date_jobs_week_chosen_tasks=[])
-            await start(message=call.message, state=state)
+            await start(message=message, state=state)
 
             # global_out_message = f'Я напомню вам : "{new_date_jobs}":\n {(day_to_prefix(day) for day in date_jobs_week_chosen_tasks)} {day}'
     else:
