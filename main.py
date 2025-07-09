@@ -64,8 +64,8 @@ async def settings(message: Message, state: FSMContext = None) -> None:
 
         if 'personal_records' in user_data:
             inp.append('Мои рекорды')
-        if os.path.exists(f'{message.from_user.id}_Diary.xlsx'):
-            inp.append('Скачать Дневник')
+        # if os.path.exists(f'{message.from_user.id}_Diary.xlsx'):
+        #     inp.append('Скачать Дневник')
 
         keyboard = generate_keyboard(buttons=inp, last_button='В Главное Меню')
         await message.answer(text='Ваши Настройки', reply_markup=keyboard)
