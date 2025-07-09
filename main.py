@@ -889,24 +889,37 @@ async def change_one_time_tasks_2(call, state) -> None:
     user_data = await state.get_data()
     one_time_tasks = user_data.get('one_time_tasks', [])
     one_time_chosen_tasks = user_data.get('one_time_chosen_tasks', [])
+
     if data == 'Добавить':
         await call.message.answer('Введите новый список разовых дел через запятую',
-                                                      reply_markup=generate_keyboard(['В Главное Меню']))
+                                  reply_markup=generate_keyboard(['В Главное Меню']))
         await state.update_data(call=call)
         await state.set_state(ClientState.one_time_tasks_3)
+
     elif data == 'Удалить':
-        for i in one_time_chosen_tasks:
-            one_time_tasks.remove(i)
-        await edit_database(one_time_tasks=one_time_tasks)
-        await state.update_data(one_time_chosen_tasks=[], one_time_tasks=one_time_tasks)
-        keyboard = keyboard_builder(tasks_pool=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+        # Создаем новый список, исключая выбранные для удаления задачи.
+        # Это более надежно, чем .remove() в цикле.
+        updated_tasks = [task for task in one_time_tasks if task not in one_time_chosen_tasks]
+
+        # Обновляем базу данных и состояние FSM
+        await edit_database(one_time_tasks=updated_tasks)
+        await state.update_data(one_time_chosen_tasks=[], one_time_tasks=updated_tasks)
+
+        # Перестраиваем клавиатуру с обновленным списком задач и ПУСТЫМ списком выбранных
+        keyboard = keyboard_builder(tasks_pool=updated_tasks, chosen=[], grid=1, add_dell=True)
         await call.message.edit_reply_markup(reply_markup=keyboard)
+
     else:
-        data = int(data)
-        if one_time_tasks[data] in one_time_chosen_tasks:
-            one_time_chosen_tasks.remove(one_time_tasks[data])
+        # Эта часть для выбора/снятия выбора работает корректно
+        task_to_toggle = one_time_tasks[int(data)]
+        if task_to_toggle in one_time_chosen_tasks:
+            one_time_chosen_tasks.remove(task_to_toggle)
         else:
-            one_time_chosen_tasks.append(one_time_tasks[data])
+            one_time_chosen_tasks.append(task_to_toggle)
+
+        # Обновляем состояние только для выбранных задач
+        await state.update_data(one_time_chosen_tasks=one_time_chosen_tasks)
+
         keyboard = keyboard_builder(tasks_pool=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
         await call.message.edit_reply_markup(reply_markup=keyboard)
 
