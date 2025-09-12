@@ -128,18 +128,36 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
     await call.answer()
     user_data = await state.get_data()
     tasks_pool = user_data.get('tasks_pool', [])
+    today_tasks = user_data.get('today_tasks', {})
+    daily_tasks = user_data.get('daily_tasks', {})
+    daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
     edit_tasks_pool_chosen = user_data.get('edit_tasks_pool_chosen', [])
     if call.data == "Удалить":
         if not edit_tasks_pool_chosen:
             await call.answer("Вы ничего не выбрали для удаления.", show_alert=True)
             return
-
+        today_tasks_copy, daily_tasks_copy = today_tasks.copy(), daily_tasks.copy()
         for name in edit_tasks_pool_chosen:
             tasks_pool.remove(name)
+            if name in today_tasks.values():
+                for key in today_tasks.keys():
+                    if today_tasks[key] == name:
+                        if key in daily_chosen_tasks:
+                            daily_chosen_tasks.remove(key)
+                        del daily_tasks_copy[key]
+            if name in daily_tasks.values():
+                for key in daily_tasks.keys():
+                    if today_tasks[key] == name:
+                        if key in daily_chosen_tasks:
+                            daily_chosen_tasks.remove(key)
+                        del today_tasks_copy[key]
+
 
         # Обновляем данные в состоянии и в БД
-        keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True, chosen=edit_tasks_pool_chosen)
-        await state.update_data(tasks_pool=tasks_pool, edit_tasks_pool_chosen=[])
+        keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True,
+                                    chosen=edit_tasks_pool_chosen)
+        await state.update_data(tasks_pool=tasks_pool, daily_tasks=daily_tasks_copy, daily_chosen_tasks=daily_chosen_tasks,
+                                today_tasks=today_tasks_copy, edit_tasks_pool_chosen=[])
         await edit_database(tasks_pool=tasks_pool)
         await call.message.edit_reply_markup(reply_markup=keyboard)
     elif call.data == 'Добавить':
