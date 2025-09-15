@@ -151,7 +151,7 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
                         if key in daily_chosen_tasks:
                             daily_chosen_tasks.remove(key)
                         del today_tasks_copy[key]
-
+            await call.message.answer(f'Вы удалили "{name}"')
 
         # Обновляем данные в состоянии и в БД
         keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True,
@@ -918,7 +918,8 @@ async def change_one_time_tasks_2(call, state) -> None:
         # Создаем новый список, исключая выбранные для удаления задачи.
         # Это более надежно, чем .remove() в цикле.
         updated_tasks = [task for task in one_time_tasks if task not in one_time_chosen_tasks]
-
+        for task in one_time_tasks:
+            await call.message.answer(f'Вы удалили "{task}"')
         # Обновляем базу данных и состояние FSM
         await edit_database(one_time_tasks=updated_tasks)
         await state.update_data(one_time_chosen_tasks=[], one_time_tasks=updated_tasks)
