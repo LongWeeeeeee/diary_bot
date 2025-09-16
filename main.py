@@ -1,11 +1,7 @@
-from asyncio import tasks
-
 from aiogram.types.error_event import ErrorEvent
 from aiogram.types import BufferedInputFile
-import asyncio
 import datetime
 import os
-import logging # <--- ДОБАВИТЬ
 import traceback
 import re
 from keys import ADMIN_ID
@@ -18,9 +14,11 @@ from sqlite import database_start, edit_database
 from functions import generate_keyboard, diary_out, add_day_to_excel, normalized,\
     tasks_pool_function, keyboard_builder, generate_unique_id_from_args,\
     start, dp, ClientState, bot, negative_responses, remove_markup, scheduler, translate,\
-    day_to_prefix, scheduler_list, TARGET_TZ
+    day_to_prefix, scheduler_list, TARGET_TZ, get_sunset_minus_30
 
-
+import asyncio
+from datetime import datetime
+import logging
 
 
 @dp.message(lambda message: message.text and message.text.lower() == 'вывести дневник')
@@ -187,7 +185,7 @@ async def add_tasks_pool(message, state: FSMContext):
     keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True)
     if 'call' in user_data:
         call = user_data.get('call', None)
-        await call.message.edit_reply_markup(reply_markup=keyboard)
+        await message.edit_reply_markup(reply_markup=keyboard)
     else:
         await message.answer('Ваш список общих дел обновлен!', reply_markup=generate_keyboard(buttons=['В главное меню']))
     await state.update_data(tasks_pool=tasks_pool)
@@ -960,10 +958,10 @@ async def change_one_time_tasks_3(message: Message, state: FSMContext) -> None:
     one_time_tasks = list(set(one_time_tasks))
     call = user_data.get('call', None)
     keyboard = keyboard_builder(tasks_pool=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
-    await call.message.edit_reply_markup(reply_markup=keyboard)
+    await message.edit_reply_markup(reply_markup=keyboard)
     await edit_database(one_time_tasks=one_time_tasks)
     await state.update_data(one_time_tasks=one_time_tasks, one_time_chosen_tasks=[])
-    await call.message.answer('Ваш список разовых дел обновлен')
+    await message.answer('Ваш список разовых дел обновлен')
     # await go_to_main_menu(call.message, state)
 
 
@@ -1024,6 +1022,7 @@ async def on_error_handler(event: ErrorEvent):
 
     except Exception as e:
         logging.error(f"Критическая ошибка: не удалось отправить уведомление об ошибке. Причина: {e}")
+
 
 async def main():
     # --- ДОБАВЬТЕ ЭТО ---

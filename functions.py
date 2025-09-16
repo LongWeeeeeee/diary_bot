@@ -19,7 +19,13 @@ import hashlib
 from datetime import timedelta, datetime
 from sqlite import edit_database
 import pytz
-
+import aiohttp
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+import uuid
+import logging
+from typing import Optional, List, Dict, Any
+logger = logging.getLogger(__name__)
 os.environ['TZ'] = 'Etc/UTC'
 
 
@@ -304,12 +310,13 @@ async def tasks_pool_function(message, state: FSMContext):
         await message.answer('Ваш список дел пуст! Добавьте ваши общие дела через запятую.')
         await state.set_state(ClientState.add_tasks_pool)
         return
+    sunrise = await get_sunset_minus_30()
     today_tasks = user_data.get('today_tasks', {})
     daily_tasks = user_data.get('daily_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
-
     if not today_tasks:
         today_tasks = daily_tasks
+        today_tasks[sunrise.strftime("%H:%M")] = 'закат ☀️'
         await state.update_data(today_tasks=today_tasks)
     # Build the keyboard with the scheduled tasks and the available pool
     keyboard = keyboard_builder(
@@ -516,3 +523,162 @@ async def diary_out(message):
 
         for part in message_parts:
             await message.answer(part)
+
+
+
+
+
+LAT = 55.72545
+LNG = 52.41122
+MSK = ZoneInfo("Europe/Moscow")
+
+PRIMARY_API = "https://api.sunrise-sunset.org/json"
+FALLBACK_API = "https://api.sunrisesunset.io/json"
+
+
+async def _call_primary_api(session: aiohttp.ClientSession, lat: float, lng: float, date: Optional[str] = None) -> Optional[str]:
+    """Async call to api.sunrise-sunset.org (formatted=0 returns ISO-like string)."""
+    params = {"lat": lat, "lng": lng, "formatted": 0, "tzid": "Europe/Moscow"}
+    if date:
+        params["date"] = date
+    timeout = aiohttp.ClientTimeout(total=10)
+    try:
+        async with session.get(PRIMARY_API, params=params, timeout=timeout) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            if data.get("status") == "OK":
+                return data["results"].get("sunset")
+            else:
+                logger.debug("Primary API returned non-OK status: %s", data.get("status"))
+    except Exception as e:
+        logger.debug("Primary API error: %s", e)
+    return None
+
+
+async def _call_fallback_api(session: aiohttp.ClientSession, lat: float, lng: float, date: Optional[str] = None) -> Optional[str]:
+    """Async call to fallback API. Returns whatever 'sunset' field contains (format may vary)."""
+    params = {"lat": lat, "lng": lng}
+    if date:
+        params["date"] = date
+    timeout = aiohttp.ClientTimeout(total=10)
+    try:
+        async with session.get(FALLBACK_API, params=params, timeout=timeout) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            if data.get("status") == "OK":
+                # fallback may return "sunset": "4:48:45 PM" or similar
+                return data["results"].get("sunset")
+            else:
+                logger.debug("Fallback API returned non-OK status: %s", data.get("status"))
+    except Exception as e:
+        logger.debug("Fallback API error: %s", e)
+    return None
+
+
+async def get_sunset_minus_30(
+    lat: float = LAT,
+    lng: float = LNG,
+    date: Optional[str] = None,
+    session: Optional[aiohttp.ClientSession] = None,
+) -> datetime:
+    """
+    Async: returns timezone-aware datetime (Europe/Moscow) of (sunset - 30 minutes).
+    Raises RuntimeError if both APIs fail / parsing fails.
+    If `session` is provided it will be reused; otherwise a temporary session is created.
+    """
+    own_session = False
+    if session is None:
+        session = aiohttp.ClientSession()
+        own_session = True
+
+    try:
+        iso = await _call_primary_api(session, lat, lng, date)
+        dt = None
+
+        if iso:
+            # primary returns ISO with offset when formatted=0 in many setups
+            try:
+                dt = datetime.fromisoformat(iso)
+            except Exception:
+                # try to parse common ISO-like fallback
+                try:
+                    dt = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%S%z")
+                except Exception:
+                    dt = None
+
+        if not dt:
+            # Try fallback API
+            iso2 = await _call_fallback_api(session, lat, lng, date)
+            if iso2:
+                # Try a few possible time formats that fallback may return
+                parsed = None
+                for fmt in ("%I:%M:%S %p", "%I:%M %p", "%H:%M:%S", "%H:%M"):
+                    try:
+                        t = datetime.strptime(iso2, fmt).time()
+                        # apply date (today or provided)
+                        if date is None or date == "today":
+                            date_str = datetime.now(MSK).date().isoformat()
+                        else:
+                            date_str = date
+                        parsed = datetime.fromisoformat(date_str + "T" + t.isoformat())
+                        parsed = parsed.replace(tzinfo=MSK)
+                        break
+                    except Exception:
+                        continue
+                if parsed:
+                    dt = parsed
+
+        if not dt:
+            raise RuntimeError("Could not fetch/parse sunset time from APIs.")
+
+        # normalize to MSK and subtract 30 minutes
+        dt = dt.astimezone(MSK)
+        return dt - timedelta(minutes=30)
+    finally:
+        if own_session:
+            await session.close()
+
+
+async def ensure_sunset_task(
+    daily_tasks: Optional[List[Dict[str, Any]]],
+    title: str = "закат 🌅",
+    session: Optional[aiohttp.ClientSession] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Async: ensure `daily_tasks` list contains a task with exact `title`.
+    Updates known time keys or appends a new task with 'due' set to sunset - 30 minutes (ISO).
+    Returns the modified list (mutated in-place and returned).
+    If fetching sunset fails, the original list is returned unchanged.
+    """
+    if daily_tasks is None:
+        daily_tasks = []
+
+    try:
+        target_dt = await get_sunset_minus_30(session=session)
+        iso_time = target_dt.isoformat()
+    except Exception as e:
+        logger.warning("Failed to fetch sunset time; leaving tasks unmodified: %s", e)
+        return daily_tasks
+
+    time_keys = ("due", "time", "datetime", "when", "at")
+    found = False
+    for item in daily_tasks:
+        if str(item.get("title", "")).strip() == title:
+            updated = False
+            for k in time_keys:
+                if k in item:
+                    item[k] = iso_time
+                    updated = True
+            if not updated:
+                item.setdefault("due", iso_time)
+            item.setdefault("done", False)
+            found = True
+            break
+
+    if not found:
+        new_task = {"id": str(uuid.uuid4()), "title": title, "due": iso_time, "done": False, "source": "sunset_patch"}
+        daily_tasks.append(new_task)
+
+    return daily_tasks
+
+
