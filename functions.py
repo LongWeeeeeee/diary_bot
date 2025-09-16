@@ -25,10 +25,11 @@ from zoneinfo import ZoneInfo
 import uuid
 import logging
 from typing import Optional, List, Dict, Any
+import ssl, certifi, aiohttp, asyncio
 logger = logging.getLogger(__name__)
 os.environ['TZ'] = 'Etc/UTC'
 
-
+ssl_ctx = ssl.create_default_context(cafile=certifi.where())
 scheduler = AsyncIOScheduler()
 scheduler.configure(timezone='Europe/Moscow')
 TARGET_TZ = pytz.timezone('Europe/Moscow')
@@ -549,7 +550,7 @@ async def _fetch_with_retries(session: aiohttp.ClientSession, url: str, params: 
     for attempt in range(1, tries + 1):
         try:
             timeout = aiohttp.ClientTimeout(total=10)
-            async with session.get(url, params=params, timeout=timeout) as resp:
+            async with session.get(url, params=params, timeout=timeout, ssl=ssl_ctx) as resp:
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as e:
