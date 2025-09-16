@@ -310,7 +310,10 @@ async def tasks_pool_function(message, state: FSMContext):
         await message.answer('Ваш список дел пуст! Добавьте ваши общие дела через запятую.')
         await state.set_state(ClientState.add_tasks_pool)
         return
-    sunrise = await get_sunset_minus_30_safe()
+    sunrise = user_data.get('sunrise', None)
+    now = datetime.now(ZoneInfo("Europe/Moscow"))
+    if not sunrise or sunrise != now.strftime("%Y-%m-%d"):
+        sunrise = await get_sunset_minus_30()
     today_tasks = user_data.get('today_tasks', {})
     daily_tasks = user_data.get('daily_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
@@ -318,7 +321,7 @@ async def tasks_pool_function(message, state: FSMContext):
         today_tasks = daily_tasks
         if sunrise:
             today_tasks[sunrise.strftime("%H:%M")] = 'закат ☀️'
-        await state.update_data(today_tasks=today_tasks)
+        await state.update_data(today_tasks=today_tasks, sunrise=sunrise.strftime("%Y-%m-%d"))
     # Build the keyboard with the scheduled tasks and the available pool
     keyboard = keyboard_builder(
         today_tasks=today_tasks,
