@@ -181,11 +181,12 @@ def counter_positive(current_word, column, count=0):
     return count
 
 
-async def scheduler_in(data, state):
+async def scheduler_in(data, state, message):
     if 'scheduler_arguments' in data:
         # загрузка в scheduler заданий из database
         for key in list(data['scheduler_arguments'].keys()):
             values = data['scheduler_arguments'][key]
+            await state.update_data(user_id=message.from_user.id,)
             values_copy = values.copy()
             values_copy['args'] = (state, key)
             if 'date' in values_copy:
@@ -199,12 +200,14 @@ async def scheduler_in(data, state):
             unique_id = generate_unique_id_from_args(values_copy)
             if not any(job.id == unique_id for job in scheduler.get_jobs()):
                 values_copy['id'] = unique_id
+                if 'day_of_week' in values_copy and isinstance(values_copy['day_of_week'], list):
+                    values_copy['day_of_week'] = values_copy['day_of_week'][0]
                 scheduler.add_job(executing_scheduler_job, **values_copy)
 
         if len(data['scheduler_arguments']) == 0:
             del data['scheduler_arguments']
             await state.set_data(data)
-            await edit_database(scheduler_arguments={})
+            await edit_database(scheduler_arguments={}, user_id=message.from_user.id)
 
 
 def keyboard_builder(tasks_pool=None, chosen=None, add_save=None, grid=1, price_tag=False, add_dell=False, checks=False, last_button=None, add_money=False, today_tasks=None):
@@ -354,11 +357,11 @@ async def scheduler_list(message, state, out_message, user_data, **kwargs):
         scheduler_arguments[out_message] = {**kwargs}
     except KeyError:
         scheduler_arguments = {out_message: {**kwargs}}
-    await edit_database(scheduler_arguments=scheduler_arguments)
+    await edit_database(scheduler_arguments=scheduler_arguments, user_id=message.from_user.id)
     await state.update_data(scheduler_arguments=scheduler_arguments)
 
 
-async def start(state, message=None, tasks_pool=None) -> None:
+async def start(state, message, tasks_pool=None) -> None:
     user_data = await state.get_data()
     data = user_data.copy()
     answer = await create_profile(user_id=message.from_user.id)
@@ -407,7 +410,7 @@ async def start(state, message=None, tasks_pool=None) -> None:
         else:
             await message.answer('Главное меню', reply_markup=keyboard)
 
-        await scheduler_in(data, state)
+        await scheduler_in(data, state, message=message)
     else:
         await handle_new_user(message, state)
 
@@ -415,37 +418,34 @@ async def start(state, message=None, tasks_pool=None) -> None:
 async def executing_scheduler_job(state, out_message):
     # функция, которая срабатывает, когда срабатывает scheduler
     user_states_data = await state.get_data()
-
+    user_id = user_states_data.get('user_id', None)
     # Безопасно получаем название задачи из сообщения
     try:
-        job_text = normalized(out_message.split(' : ')[1]).replace('"', '')
+        text_normalized = normalized(out_message.split(' : ')[1]).replace('"', '').replace(' - ', '-')
     except IndexError:
         print(f"Error parsing job text from: {out_message}")
         return
-
+    job, job_timing = text_normalized.split('-')[0], text_normalized.split('-')[1].split(' ')[0]
     # 1. Безопасно получаем список one_time_tasks из состояния
     # Если его нет, создаем пустой список
-    one_time_tasks = user_states_data.get('one_time_tasks', [])
+    daily_tasks = user_states_data.get('daily_tasks', {})
 
     # 2. Добавляем новую задачу в список, если её там ещё нет
-    if job_text not in one_time_tasks:
-        one_time_tasks.append(job_text)
+    daily_tasks[job_timing] = job
 
     # 3. Обновляем состояние и базу данных
-    await state.update_data(one_time_tasks=one_time_tasks)
+    await state.update_data(daily_tasks=daily_tasks)
     # Предполагаем, что edit_database требует user_id, как в предыдущей рекомендации.
-    # Если нет, используйте ваш текущий вызов.
-    user_id = state.key.user_id
-    await edit_database(user_id=user_id, one_time_tasks=one_time_tasks)
+    await edit_database(daily_tasks=daily_tasks, user_id=user_id)
 
     # 4. Если это было разовое напоминание (trigger='date'), удаляем его из scheduler_arguments
     scheduler_arguments = user_states_data.get('scheduler_arguments', {})
     if out_message in scheduler_arguments and scheduler_arguments[out_message].get('trigger') == 'date':
         del scheduler_arguments[out_message]
         await state.update_data(scheduler_arguments=scheduler_arguments)
-        await edit_database(user_id=user_id, scheduler_arguments=scheduler_arguments)
+        await edit_database(scheduler_arguments=scheduler_arguments, user_id=user_id)
 
-    print(f"Successfully added scheduled task '{job_text}' to one_time_tasks for user {user_id}")
+    print(f"Successfully added scheduled task '{text_normalized}' to daily_tasks for user {user_id}")
 
 
 
