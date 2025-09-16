@@ -14,7 +14,7 @@ from sqlite import database_start, edit_database
 from functions import generate_keyboard, diary_out, add_day_to_excel, normalized,\
     tasks_pool_function, keyboard_builder, generate_unique_id_from_args,\
     start, dp, ClientState, bot, negative_responses, remove_markup, scheduler, translate,\
-    day_to_prefix, scheduler_list, TARGET_TZ, get_sunset_minus_30
+    day_to_prefix, scheduler_list, TARGET_TZ
 
 import asyncio
 from datetime import datetime
