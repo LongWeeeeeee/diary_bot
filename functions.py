@@ -317,15 +317,19 @@ async def tasks_pool_function(message, state: FSMContext):
     today_tasks = user_data.get('today_tasks', {})
     daily_tasks = user_data.get('daily_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
+    daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
     if 'закат ☀️' not in today_tasks.values():
         if not today_tasks:
             today_tasks = daily_tasks.copy()
+        if not today_tasks_not_time:
+            today_tasks_not_time = daily_tasks_not_time.copy()
+
         if not sunrise or sunrise != now.strftime("%Y-%m-%d"):
             sunrise = await get_sunset_minus_30()
             today_tasks[sunrise.strftime("%H:%M")] = 'закат ☀️'
-            await state.update_data(today_tasks=today_tasks, sunrise=sunrise.strftime("%Y-%m-%d"))
+            await state.update_data(today_tasks=today_tasks, sunrise=sunrise.strftime("%Y-%m-%d"), today_tasks_not_time=today_tasks_not_time)
         else:
-            await state.update_data(today_tasks=today_tasks)
+            await state.update_data(today_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time)
     # Build the keyboard with the scheduled tasks and the available pool
     keyboard = keyboard_builder(
         tasks_dict=today_tasks,
