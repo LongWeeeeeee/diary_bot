@@ -406,7 +406,7 @@ async def personal_rate_1(call, state, flag=False) -> None:
         db_updates['one_time_tasks'] = one_time_tasks
     data_for_excel = {
         'tasks_pool': user_data['tasks_pool'],
-        'date': dt.now(),  # Assuming this is for yesterday
+        'date': datetime.datetime.now(),  # Assuming this is for yesterday
         'activities': activities,
         'user_message': user_data['user_message'],
         'sleep_quality': user_data['sleep_quality'],
