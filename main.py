@@ -99,6 +99,15 @@ async def edit_tasks_pool_handler(message: Message, state: FSMContext):
 @dp.message(ClientState.new_today_tasks)
 async def new_today_tasks(message: Message, state: FSMContext = None) -> None:
     data = message.text
+    user_data = await state.get_data()
+    if data.replace(' ', '') == '-':
+        today_tasks_not_time = user_data.get('today_tasks_not_time', [])
+        temp = user_data.get('temp', None)
+        today_tasks_not_time.append(temp)
+        await state.update_data(today_tasks_not_time=today_tasks_not_time)
+        await message.answer('Отлично! Дело добавлено в ваше расписание')
+        await tasks_pool_function(message=message, state=state)
+        return
     try:
         split_data = data.split(':')
         if len(split_data) == 2:
@@ -107,7 +116,7 @@ async def new_today_tasks(message: Message, state: FSMContext = None) -> None:
         else:
             hours = int(split_data[0])
             data = split_data[0] + ':00'
-        user_data = await state.get_data()
+
         today_tasks = user_data.get('today_tasks', {})
         task = user_data.get('temp', None)
         if data in today_tasks:
@@ -201,15 +210,17 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
     await call.answer()
     data = call.data
     user_data = await state.get_data()
-
+    #время если таск с временем, индекс если без времени
     tasks_pool = user_data.get('tasks_pool', [])
     today_tasks = user_data.get('today_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
     one_time_tasks = user_data.get('one_time_tasks', [])
     daily_tasks = user_data.get('daily_tasks', {})
+    today_tasks_not_time = user_data.get('today_tasks_not_time', [])
+    today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
 
     if data == 'Отправить':
-        await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
+        await state.update_data(daily_chosen_tasks=daily_chosen_tasks, today_tasks_not_time_chosen=today_tasks_not_time_chosen)
         collected_data = user_data.get('chosen_collected_data', {})
         if 'Шаги' in collected_data:
             await call.message.answer("Сколько сделал шагов?")
@@ -246,6 +257,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         # Re-render the keyboard with the updated lists
         keyboard = keyboard_builder(
             tasks_dict=today_tasks,
+            tasks_list=today_tasks_not_time,
             chosen=daily_chosen_tasks,  # Choices are now cleared
             grid=1,
             add_dell=True,
@@ -267,16 +279,24 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         await state.set_state(ClientState.change_tasks_pool_1)
 
     else:
-        if data in daily_chosen_tasks:
-            daily_chosen_tasks.remove(data)
+        if ':' in data:
+            if data in daily_chosen_tasks:
+                daily_chosen_tasks.remove(data)
+            else:
+                daily_chosen_tasks.append(data)
+            await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
         else:
-            daily_chosen_tasks.append(data)
-        await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
-
+            temp = today_tasks_not_time[int(data)]
+            if temp in today_tasks_not_time_chosen:
+                today_tasks_not_time_chosen.remove(temp)
+            else:
+                today_tasks_not_time_chosen.append(temp)
+            await state.update_data(today_tasks_not_time_chosen=today_tasks_not_time_chosen)
         # Rebuild keyboard to show the checkmark
         keyboard = keyboard_builder(
             tasks_dict=today_tasks,
-            chosen=daily_chosen_tasks,
+            tasks_list=today_tasks_not_time,
+            chosen=daily_chosen_tasks + today_tasks_not_time_chosen,
             grid=1,
             add_dell=True,
             last_button="🚀Отправить 🚀",
@@ -294,7 +314,8 @@ async def proceed_tasks_pool_1(call, state: FSMContext) -> None:
     one_time_tasks = user_data.get('one_time_tasks', [])
     tasks_pool_clear = [i for i in tasks_pool+one_time_tasks if i not in today_tasks.values()]
     await call.message.answer(f'Вы выбрали: {tasks_pool_clear[data]}\n'
-                              f'Введите время в формате ЧЧ:ММ, на которое вы хотите назначить это дело.')
+                              f'Введите время в формате ЧЧ:ММ\n'
+                              f'"-" если дело без времени')
     await state.update_data(temp=tasks_pool_clear[data])
     await state.set_state(ClientState.new_today_tasks)
 
@@ -395,6 +416,10 @@ async def personal_rate_1(call, state, flag=False) -> None:
     activities = [today_tasks[key] for key in daily_chosen_tasks_keys if key in today_tasks]
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', {})
     one_time_tasks = user_data.get('one_time_tasks', [])
+    today_tasks_not_time = user_data.get('today_tasks_not_time', [])
+    today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
+    today_tasks_not_time_activities = [today_tasks_not_time[int(index)] for index in today_tasks_not_time_chosen]
+    activities += today_tasks_not_time_activities
     personal_rate = user_data.get('personal_rate', None)
     message = user_data.get('message', None)
     for time in daily_chosen_tasks:

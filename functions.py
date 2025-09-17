@@ -208,6 +208,15 @@ async def scheduler_in(data, state, message):
 def keyboard_builder(tasks_list=None, tasks_dict=None, chosen=None, add_save=None, grid=1, price_tag=False, add_dell=False, checks=False, last_button=None, add_money=False):
     data_builder = InlineKeyboardBuilder()
     tasks_pool_builder = InlineKeyboardBuilder()
+    if tasks_list is not None:
+        for index, task in enumerate(tasks_list):
+            if chosen is not None:
+                if task in chosen:
+                    data_builder.button(text=f"{task} ✅️", callback_data=f"{index}")
+                else:
+                    data_builder.button(text=f"{task} ✔️", callback_data=f"{index}")
+            else:
+                tasks_pool_builder.button(text=f"{task}", callback_data=f"{index}")
     if tasks_dict is not None:
         today_tasks = dict(sorted(
             tasks_dict.items(),
@@ -221,15 +230,7 @@ def keyboard_builder(tasks_list=None, tasks_dict=None, chosen=None, add_save=Non
                     data_builder.button(text=f"{time} {task} ✅️", callback_data=f"{time}")
                 else:
                     data_builder.button(text=f"{time} {task} ✔️", callback_data=f"{time}")
-    if tasks_list is not None:
-        for index, task in enumerate(tasks_list):
-            if chosen is not None:
-                if task in chosen:
-                    data_builder.button(text=f"{task} ✅️", callback_data=f"{index}")
-                else:
-                    data_builder.button(text=f"{task} ✔️", callback_data=f"{index}")
-            else:
-                tasks_pool_builder.button(text=f"{task}", callback_data=f"{index}")
+
         # else:
         #     product_name = job
         #     price = inp[job]
@@ -243,7 +244,6 @@ def keyboard_builder(tasks_list=None, tasks_dict=None, chosen=None, add_save=Non
         #             data_builder.button(text=f"{int(price)}💰 {product_name} ✅️", callback_data=f"{index}")
         #         else:
         #             data_builder.button(text=f"{int(price)}💰 {product_name} ✔️", callback_data=f"{index}")
-
     data_builder.adjust(grid, grid)
     d_new_builder = InlineKeyboardBuilder()
     if add_money:
@@ -313,7 +313,7 @@ async def tasks_pool_function(message, state: FSMContext):
         return
     sunrise = user_data.get('sunrise', None)
     now = datetime.now(ZoneInfo("Europe/Moscow"))
-
+    today_tasks_not_time = user_data.get('today_tasks_not_time', [])
     today_tasks = user_data.get('today_tasks', {})
     daily_tasks = user_data.get('daily_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
@@ -329,6 +329,7 @@ async def tasks_pool_function(message, state: FSMContext):
     # Build the keyboard with the scheduled tasks and the available pool
     keyboard = keyboard_builder(
         tasks_dict=today_tasks,
+        tasks_list=today_tasks_not_time,
         grid=1,
         chosen=daily_chosen_tasks,
         add_dell=True,
