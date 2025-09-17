@@ -324,7 +324,7 @@ async def tasks_pool_function(message, state: FSMContext):
     daily_tasks = user_data.get('daily_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
     if not today_tasks:
-        today_tasks = daily_tasks
+        today_tasks = daily_tasks.copy()
         if sunrise:
             today_tasks[sunrise.strftime("%H:%M")] = 'закат ☀️'
         await state.update_data(today_tasks=today_tasks, sunrise=sunrise.strftime("%Y-%m-%d"))
