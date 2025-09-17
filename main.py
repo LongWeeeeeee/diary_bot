@@ -272,7 +272,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         await call.message.edit_reply_markup(reply_markup=keyboard)
 
     elif data == 'Добавить':
-        tasks_pool_clear = [i for i in (tasks_pool+one_time_tasks) if i not in today_tasks.values()]
+        tasks_pool_clear = [i for i in (tasks_pool+one_time_tasks) if i not in list(today_tasks.values())+today_tasks_not_time]
         keyboard = keyboard_builder(tasks_list=tasks_pool_clear,
                                     add_dell=False,
                                     )

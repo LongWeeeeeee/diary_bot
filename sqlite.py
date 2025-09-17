@@ -15,7 +15,7 @@ async def database_start():
     cur.execute(
         "CREATE TABLE IF NOT EXISTS profile (user_id TEXT PRIMARY KEY, tasks_pool TEXT, one_time_tasks TEXT,"
         " scheduler_arguments TEXT, personal_records TEXT, previous_diary TEXT, chosen_collected_data TEXT,"
-        " notifications_data TEXT, today_tasks TEXT, daily_tasks TEXT, today_tasks_not_time TEXT)")
+        " notifications_data TEXT, daily_tasks TEXT, daily_tasks_not_time TEXT)")
 
     db.commit()
 
