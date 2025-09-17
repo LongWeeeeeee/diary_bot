@@ -114,8 +114,7 @@ async def new_today_tasks(message: Message, state: FSMContext = None) -> None:
             hours = int(split_data[0])
             minutes = int(split_data[1])
         else:
-            hours = int(split_data[0])
-            data = split_data[0] + ':00'
+            raise TypeError
 
         today_tasks = user_data.get('today_tasks', {})
         task = user_data.get('temp', None)
@@ -194,7 +193,7 @@ async def add_tasks_pool(message, state: FSMContext):
     tasks_pool = list(set(tasks_pool))
     keyboard = keyboard_builder(tasks_list=tasks_pool, add_dell=True)
     if 'call' in user_data:
-        await message.edit_reply_markup(reply_markup=keyboard)
+        await user_data['call'].message.edit_reply_markup(reply_markup=keyboard)
     else:
         await message.answer('Ваш список общих дел обновлен!', reply_markup=generate_keyboard(buttons=['В главное меню']))
     await state.update_data(tasks_pool=tasks_pool)
@@ -236,10 +235,13 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
             await state.set_state(ClientState.about_day)
 
     elif data == 'Сохранить':
+        for key, value in today_tasks.copy().items():
+            if value == 'закат ☀️':
+                del today_tasks[key]
         # Save the current temporary schedule (today_tasks) as the permanent one (daily_tasks)
         await state.update_data(daily_tasks=today_tasks, daily_tasks_not_time=today_tasks_not_time)
 
-        await edit_database(daily_tasks=today_tasks, user_id=call.from_user.id)
+        await edit_database(daily_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time, user_id=call.from_user.id)
         await call.message.answer('Расписание на день сохранено!', show_alert=True)
 
     elif data == 'Удалить':
@@ -419,7 +421,7 @@ async def personal_rate_1(call, state, flag=False) -> None:
     one_time_tasks = user_data.get('one_time_tasks', [])
     today_tasks_not_time = user_data.get('today_tasks_not_time', [])
     today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
-    today_tasks_not_time_activities = [today_tasks_not_time[int(index)] for index in today_tasks_not_time_chosen]
+    today_tasks_not_time_activities = [task for task in today_tasks_not_time_chosen]
     activities += today_tasks_not_time_activities
     personal_rate = user_data.get('personal_rate', None)
     message = user_data.get('message', None)
@@ -978,7 +980,7 @@ async def change_one_time_tasks_3(message: Message, state: FSMContext) -> None:
             one_time_tasks.append(i)
     one_time_tasks = list(set(one_time_tasks))
     keyboard = keyboard_builder(tasks_list=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
-    await message.edit_reply_markup(reply_markup=keyboard)
+    await user_data['call'].message.edit_reply_markup(reply_markup=keyboard)
     await edit_database(one_time_tasks=one_time_tasks, user_id=message.from_user.id)
     await state.update_data(one_time_tasks=one_time_tasks, one_time_chosen_tasks=[])
     await message.answer('Ваш список разовых дел обновлен')

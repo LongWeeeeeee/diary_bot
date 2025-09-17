@@ -4,7 +4,7 @@ from aiogram.types import Message
 ALLOWED_COLUMNS = {
     "tasks_pool", "one_time_tasks", "scheduler_arguments",
     "personal_records", "previous_diary", "chosen_collected_data",
-    "notifications_data", "today_tasks", "daily_tasks", "user_id"
+    "notifications_data", "today_tasks", "daily_tasks", "user_id", "today_tasks_not_time"
 }
 async def database_start():
     global db, cur
@@ -15,7 +15,7 @@ async def database_start():
     cur.execute(
         "CREATE TABLE IF NOT EXISTS profile (user_id TEXT PRIMARY KEY, tasks_pool TEXT, one_time_tasks TEXT,"
         " scheduler_arguments TEXT, personal_records TEXT, previous_diary TEXT, chosen_collected_data TEXT,"
-        " notifications_data TEXT, today_tasks TEXT, daily_tasks TEXT)")
+        " notifications_data TEXT, today_tasks TEXT, daily_tasks TEXT, today_tasks_not_time TEXT)")
 
     db.commit()
 
@@ -23,7 +23,7 @@ async def database_start():
 async def create_profile(user_id):
     user = cur.execute("SELECT * FROM profile WHERE user_id = ?", (user_id,)).fetchone()
     if not user:
-        cur.execute("INSERT INTO profile VALUES(?,?,?,?,?,?,?,?,?,?)", (user_id, '[]', '[]', '{}', '{}', '', '[]', '{}', '{}', '{}'))
+        cur.execute("INSERT INTO profile VALUES(?,?,?,?,?,?,?,?,?,?,?)", (user_id, '[]', '[]', '{}', '{}', '', '[]', '{}', '{}', '{}', '[]'))
         db.commit()
     else:
         return cur.execute("SELECT * FROM profile WHERE user_id = ?", (user_id,)).fetchone()

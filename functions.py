@@ -369,18 +369,19 @@ async def start(state, message) -> None:
     data = user_data.copy()
     answer = await create_profile(user_id=message.from_user.id)
     if answer is not None:
-        user_id, tasks_pool, one_time_tasks, scheduler_arguments, personal_records, \
-            previous_diary, chosen_collected_data, notifications_data, today_tasks_db, daily_tasks = answer[
+        (user_id, tasks_pool, one_time_tasks, scheduler_arguments, personal_records, \
+            previous_diary, chosen_collected_data, notifications_data, today_tasks_db,
+         daily_tasks, today_tasks_not_time) = answer[
             0], json.loads(
             answer[1]), json.loads(answer[2]), \
             json.loads(answer[3]), json.loads(answer[4]), answer[5], json.loads(answer[6]), json.loads(
-            answer[7]), json.loads(answer[8]), json.loads(
-            answer[9])  # Note: today_tasks is not used from db, daily_tasks is the source of truth
+            answer[7]), json.loads(answer[8]), json.loads(answer[9]), json.loads(answer[10])  # Note: today_tasks is not used from db, daily_tasks is the source of truth
 
         data['tasks_pool'] = list(set(tasks_pool))
         data['daily_tasks'] = daily_tasks.copy()
         data['one_time_tasks'] = one_time_tasks
         data['scheduler_arguments'] = scheduler_arguments
+        data['today_tasks_not_time'] = today_tasks_not_time
         if personal_records:
             data['personal_records'] = personal_records
         data['previous_diary'] = previous_diary
