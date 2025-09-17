@@ -157,7 +157,7 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
                                     chosen=edit_tasks_pool_chosen)
         await state.update_data(tasks_pool=tasks_pool, daily_tasks=daily_tasks_copy, daily_chosen_tasks=daily_chosen_tasks,
                                 today_tasks=today_tasks_copy, edit_tasks_pool_chosen=[])
-        await edit_database(tasks_pool=tasks_pool, user_id=call.message.from_user.id)
+        await edit_database(tasks_pool=tasks_pool, user_id=call.from_user.id)
         await call.message.edit_reply_markup(reply_markup=keyboard)
     elif call.data == 'Добавить':
         await call.message.answer('Введите список дел который хотите добавить через запятую')
@@ -227,7 +227,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
     elif data == 'Сохранить':
         # Save the current temporary schedule (today_tasks) as the permanent one (daily_tasks)
         await state.update_data(daily_tasks=today_tasks)
-        await edit_database(daily_tasks=today_tasks, user_id=call.message.from_user.id)
+        await edit_database(daily_tasks=today_tasks, user_id=call.from_user.id)
         await call.message.answer('Расписание на день сохранено!', show_alert=True)
 
     elif data == 'Удалить':
@@ -422,7 +422,7 @@ async def personal_rate_1(call, state, flag=False) -> None:
     if answer:
         db_updates['personal_records'] = answer
     if db_updates:
-        await edit_database(**db_updates, user_id=call.message.from_user.id)
+        await edit_database(**db_updates, user_id=call.from_user.id)
     previous_diary = user_data.get('previous_diary', None)
     if previous_diary:
         try:
@@ -459,7 +459,7 @@ async def collected_data_proceed(call, state):
         chosen_collected_data = [['Шаги', 'Сон'][data]]
     await state.update_data(chosen_collected_data=chosen_collected_data)
     await state.update_data(daily_chosen_tasks=[])
-    await edit_database(chosen_collected_data=chosen_collected_data, user_id=call.message.from_user.id)
+    await edit_database(chosen_collected_data=chosen_collected_data, user_id=call.from_user.id)
     keyboard = keyboard_builder(tasks_list=['Шаги', 'Сон'], chosen=chosen_collected_data,
                                 add_dell=False, grid=2)
     await bot.edit_message_reply_markup(
@@ -530,7 +530,7 @@ async def notifications_proceed(call, state):
         else:
             notifications_data['chosen_notifications'] = ['Включено']
         await state.update_data(notifications_data=notifications_data)
-        await edit_database(notifications_data=notifications_data, user_id=call.message.from_user.id)
+        await edit_database(notifications_data=notifications_data, user_id=call.from_user.id)
         date_builder = InlineKeyboardBuilder()
         inp = ['Включено']
         for index, job in enumerate(inp):
@@ -677,7 +677,7 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
             await call.message.edit_reply_markup(reply_markup=keyboard)
 
         await state.update_data(scheduler_arguments=scheduler_arguments, date_chosen_tasks=[])
-        await edit_database(scheduler_arguments=scheduler_arguments, user_id=call.message.from_user.id)
+        await edit_database(scheduler_arguments=scheduler_arguments, user_id=call.from_user.id)
 
     elif data == 'Добавить':
         await call.message.answer('ведите новое дело и время через "-". Например:\ncходить на кружок - 18:00',)
@@ -914,7 +914,7 @@ async def change_one_time_tasks_2(call, state) -> None:
         for task in one_time_tasks:
             await call.message.answer(f'Вы удалили "{task}"')
         # Обновляем базу данных и состояние FSM
-        await edit_database(one_time_tasks=updated_tasks, user_id=call.message.from_user.id)
+        await edit_database(one_time_tasks=updated_tasks, user_id=call.from_user.id)
         await state.update_data(one_time_chosen_tasks=[], one_time_tasks=updated_tasks)
 
         # Перестраиваем клавиатуру с обновленным списком задач и ПУСТЫМ списком выбранных
