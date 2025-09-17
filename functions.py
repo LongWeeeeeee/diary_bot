@@ -374,9 +374,9 @@ async def start(state, message) -> None:
          daily_tasks, daily_tasks_not_time) = (json.loads(answer[0]), json.loads(answer[1]), json.loads(answer[2]), \
             json.loads(answer[3]), json.loads(answer[4]), answer[5], json.loads(answer[6]), json.loads(
             answer[7]), json.loads(answer[8]), json.loads(answer[9]))  # Note: today_tasks is not used from db, daily_tasks is the source of truth
-
+        data['daily_tasks_not_time'] = daily_tasks_not_time
         data['tasks_pool'] = list(set(tasks_pool))
-        data['daily_tasks'] = daily_tasks.copy()
+        data['daily_tasks'] = daily_tasks
         data['one_time_tasks'] = one_time_tasks
         data['scheduler_arguments'] = scheduler_arguments
         if personal_records:

@@ -2,9 +2,9 @@ import json
 import sqlite3 as sq
 from aiogram.types import Message
 ALLOWED_COLUMNS = {
-    "tasks_pool", "one_time_tasks", "scheduler_arguments",
+    "user_id", "tasks_pool", "one_time_tasks", "scheduler_arguments",
     "personal_records", "previous_diary", "chosen_collected_data",
-    "notifications_data", "today_tasks", "daily_tasks", "user_id", "today_tasks_not_time"
+    "notifications_data", "daily_tasks", "daily_tasks_not_time"
 }
 async def database_start():
     global db, cur
@@ -23,7 +23,7 @@ async def database_start():
 async def create_profile(user_id):
     user = cur.execute("SELECT * FROM profile WHERE user_id = ?", (user_id,)).fetchone()
     if not user:
-        cur.execute("INSERT INTO profile VALUES(?,?,?,?,?,?,?,?,?,?,?)", (user_id, '[]', '[]', '{}', '{}', '', '[]', '{}', '{}', '{}', '[]'))
+        cur.execute("INSERT INTO profile VALUES(?,?,?,?,?,?,?,?,?,?)", (user_id, '[]', '[]', '{}', '{}', '', '[]', '{}', '{}', '[]'))
         db.commit()
     else:
         return cur.execute("SELECT * FROM profile WHERE user_id = ?", (user_id,)).fetchone()

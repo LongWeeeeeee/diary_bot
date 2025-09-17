@@ -240,8 +240,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
                 del today_tasks[key]
         # Save the current temporary schedule (today_tasks) as the permanent one (daily_tasks)
         await state.update_data(daily_tasks=today_tasks, daily_tasks_not_time=today_tasks_not_time)
-
-        await edit_database(daily_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time, user_id=call.from_user.id)
+        await edit_database(daily_tasks=today_tasks, daily_tasks_not_time=today_tasks_not_time, user_id=call.from_user.id)
         await call.message.answer('Расписание на день сохранено!', show_alert=True)
 
     elif data == 'Удалить':
@@ -317,7 +316,8 @@ async def proceed_tasks_pool_1(call, state: FSMContext) -> None:
     tasks_pool = user_data.get('tasks_pool', [])
     today_tasks = user_data.get('today_tasks', {})
     one_time_tasks = user_data.get('one_time_tasks', [])
-    tasks_pool_clear = [i for i in tasks_pool+one_time_tasks if i not in today_tasks.values()]
+    today_tasks_not_time = user_data.get('today_tasks_not_time', [])
+    tasks_pool_clear = [i for i in (tasks_pool+one_time_tasks) if i not in list(today_tasks.values())+today_tasks_not_time]
     await call.message.answer(f'Вы выбрали: {tasks_pool_clear[data]}\n'
                               f'Введите время в формате ЧЧ:ММ\n'
                               f'"-" если дело без времени')
