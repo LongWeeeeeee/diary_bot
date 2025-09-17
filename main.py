@@ -245,7 +245,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         await call.message.answer('Расписание на день сохранено!', show_alert=True)
 
     elif data == 'Удалить':
-        if not daily_chosen_tasks:
+        if len(daily_chosen_tasks)==0 and len(today_tasks_not_time_chosen)==0:
             await call.answer('Сначала выберите дела для удаления из расписания.', show_alert=True)
             return
 
@@ -253,9 +253,11 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         for time_key in daily_chosen_tasks:
             if time_key in today_tasks:
                 del today_tasks[time_key]
-
+        for task in today_tasks_not_time_chosen:
+            today_tasks_not_time.remove(task)
         # Reset choices and update state
-        await state.update_data(today_tasks=today_tasks, daily_chosen_tasks=[])
+        await state.update_data(today_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time,
+                                daily_chosen_tasks=[], today_tasks_not_time_chosen=[])
 
         # Re-render the keyboard with the updated lists
         keyboard = keyboard_builder(
