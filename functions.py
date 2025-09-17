@@ -1,9 +1,7 @@
 import re
 import json
-import logging
 import os
 
-import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -16,15 +14,12 @@ from sqlite import create_profile
 import pandas as pd
 from aiogram import types
 import hashlib
-from datetime import timedelta, datetime
 from sqlite import edit_database
 import pytz
-import aiohttp
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-import uuid
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional
 import ssl, certifi, aiohttp, asyncio
 
 ssl_ctx = ssl.create_default_context(cafile=certifi.where())
@@ -210,24 +205,24 @@ async def scheduler_in(data, state, message):
             await edit_database(scheduler_arguments={}, user_id=message.from_user.id)
 
 
-def keyboard_builder(tasks_pool=None, chosen=None, add_save=None, grid=1, price_tag=False, add_dell=False, checks=False, last_button=None, add_money=False, today_tasks=None):
+def keyboard_builder(tasks_list=None, tasks_dict=None, chosen=None, add_save=None, grid=1, price_tag=False, add_dell=False, checks=False, last_button=None, add_money=False):
     data_builder = InlineKeyboardBuilder()
     tasks_pool_builder = InlineKeyboardBuilder()
-    if today_tasks is not None:
+    if tasks_dict is not None:
         today_tasks = dict(sorted(
-            today_tasks.items(),
+            tasks_dict.items(),
             key=lambda item: parse_time_key(item[0])
         ))
         for time, task in today_tasks.items():
             if checks:
                 data_builder.button(text=f"{time} {task} ✔️", callback_data=f"{time}")
-            elif price_tag == False:
+            elif not price_tag:
                 if time in chosen:
                     data_builder.button(text=f"{time} {task} ✅️", callback_data=f"{time}")
                 else:
                     data_builder.button(text=f"{time} {task} ✔️", callback_data=f"{time}")
-    if tasks_pool is not None:
-        for index, task in enumerate(tasks_pool):
+    if tasks_list is not None:
+        for index, task in enumerate(tasks_list):
             if chosen is not None:
                 if task in chosen:
                     data_builder.button(text=f"{task} ✅️", callback_data=f"{index}")
@@ -318,19 +313,22 @@ async def tasks_pool_function(message, state: FSMContext):
         return
     sunrise = user_data.get('sunrise', None)
     now = datetime.now(ZoneInfo("Europe/Moscow"))
-    if not sunrise or sunrise != now.strftime("%Y-%m-%d"):
-        sunrise = await get_sunset_minus_30()
+
     today_tasks = user_data.get('today_tasks', {})
     daily_tasks = user_data.get('daily_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
-    if not today_tasks:
-        today_tasks = daily_tasks.copy()
-        if sunrise:
+    if 'закат ☀️' not in today_tasks.values():
+        if not today_tasks:
+            today_tasks = daily_tasks.copy()
+        if not sunrise or sunrise != now.strftime("%Y-%m-%d"):
+            sunrise = await get_sunset_minus_30()
             today_tasks[sunrise.strftime("%H:%M")] = 'закат ☀️'
-        await state.update_data(today_tasks=today_tasks, sunrise=sunrise.strftime("%Y-%m-%d"))
+            await state.update_data(today_tasks=today_tasks, sunrise=sunrise.strftime("%Y-%m-%d"))
+        else:
+            await state.update_data(today_tasks=today_tasks)
     # Build the keyboard with the scheduled tasks and the available pool
     keyboard = keyboard_builder(
-        today_tasks=today_tasks,
+        tasks_dict=today_tasks,
         grid=1,
         chosen=daily_chosen_tasks,
         add_dell=True,
@@ -361,7 +359,7 @@ async def scheduler_list(message, state, out_message, user_data, **kwargs):
     await state.update_data(scheduler_arguments=scheduler_arguments)
 
 
-async def start(state, message, tasks_pool=None) -> None:
+async def start(state, message) -> None:
     user_data = await state.get_data()
     data = user_data.copy()
     answer = await create_profile(user_id=message.from_user.id)
@@ -489,7 +487,7 @@ async def counter_max_days(data, tasks_pool, message, activities, personal_recor
 
 
 
-def generate_keyboard(buttons: list, last_button=None, first_button=None, chosen=None):
+def generate_keyboard(buttons: list, last_button=None, first_button=None):
     #✅️✔️
 
     if last_button is not None:

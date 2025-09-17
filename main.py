@@ -14,7 +14,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlite import database_start, edit_database
 from functions import generate_keyboard, diary_out, add_day_to_excel, normalized,\
     tasks_pool_function, keyboard_builder, generate_unique_id_from_args,\
-    start, dp, ClientState, bot, negative_responses, remove_markup, scheduler, translate,\
+    start, dp, ClientState, bot, negative_responses, scheduler, translate,\
     day_to_prefix, scheduler_list, TARGET_TZ
 
 import asyncio
@@ -88,7 +88,7 @@ async def edit_tasks_pool_handler(message: Message, state: FSMContext):
     await state.update_data(tasks_to_delete=[])
 
     # Используем немного измененный keyboard_builder или создадим новый
-    keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True, chosen=edit_tasks_pool_chosen)
+    keyboard = keyboard_builder(tasks_list=tasks_pool, add_dell=True, chosen=edit_tasks_pool_chosen)
     await message.answer(
         "Ваш общий список дел",
         reply_markup=keyboard
@@ -153,7 +153,7 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
             await call.message.answer(f'Вы удалили "{name}"')
 
         # Обновляем данные в состоянии и в БД
-        keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True,
+        keyboard = keyboard_builder(tasks_list=tasks_pool, add_dell=True,
                                     chosen=edit_tasks_pool_chosen)
         await state.update_data(tasks_pool=tasks_pool, daily_tasks=daily_tasks_copy, daily_chosen_tasks=daily_chosen_tasks,
                                 today_tasks=today_tasks_copy, edit_tasks_pool_chosen=[])
@@ -169,7 +169,7 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
             edit_tasks_pool_chosen.remove(tasks_pool[data])
         else:
             edit_tasks_pool_chosen.append(tasks_pool[data])
-        keyboard = keyboard_builder(tasks_pool=tasks_pool, chosen=edit_tasks_pool_chosen, add_dell=True)
+        keyboard = keyboard_builder(tasks_list=tasks_pool, chosen=edit_tasks_pool_chosen, add_dell=True)
         await call.message.edit_reply_markup(reply_markup=keyboard)
         await state.update_data(edit_tasks_pool_chosen=edit_tasks_pool_chosen)
 
@@ -183,7 +183,7 @@ async def add_tasks_pool(message, state: FSMContext):
     for word in normalized:
         tasks_pool.append(word)
     tasks_pool = list(set(tasks_pool))
-    keyboard = keyboard_builder(tasks_pool=tasks_pool, add_dell=True)
+    keyboard = keyboard_builder(tasks_list=tasks_pool, add_dell=True)
     if 'call' in user_data:
         await message.edit_reply_markup(reply_markup=keyboard)
     else:
@@ -245,7 +245,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
 
         # Re-render the keyboard with the updated lists
         keyboard = keyboard_builder(
-            today_tasks=today_tasks,
+            tasks_dict=today_tasks,
             chosen=daily_chosen_tasks,  # Choices are now cleared
             grid=1,
             add_dell=True,
@@ -256,7 +256,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
 
     elif data == 'Добавить':
         tasks_pool_clear = [i for i in (tasks_pool+one_time_tasks) if i not in today_tasks.values()]
-        keyboard = keyboard_builder(tasks_pool=tasks_pool_clear,
+        keyboard = keyboard_builder(tasks_list=tasks_pool_clear,
                                     add_dell=False,
                                     )
 
@@ -275,7 +275,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
 
         # Rebuild keyboard to show the checkmark
         keyboard = keyboard_builder(
-            today_tasks=today_tasks,
+            tasks_dict=today_tasks,
             chosen=daily_chosen_tasks,
             grid=1,
             add_dell=True,
@@ -307,7 +307,7 @@ async def rebuild_keyboard_with_chosen(data, call, chosen_tasks, state, tasks, t
         chosen_tasks.append(data)
     # Обновляем именно daily_chosen_tasks в состоянии
     await state.update_data(daily_chosen_tasks=chosen_tasks) # <--- Убедимся, что обновляем правильный ключ
-    keyboard = keyboard_builder(tasks_pool=tasks, chosen=chosen_tasks, grid=grid, today_tasks=today_tasks)
+    keyboard = keyboard_builder(tasks_list=tasks, chosen=chosen_tasks, grid=grid, tasks_dict=today_tasks)
     await bot.edit_message_reply_markup(
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
@@ -375,7 +375,7 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
         await message.answer(f'"{message.text}" должен быть числом от 0 до 10')
         return
     await state.update_data(personal_rate=personal_rate, message=message)
-    await message.answer('За вчера или за сегодня?', reply_markup=keyboard_builder(tasks_pool=['За вчера', 'За сегодня'], grid=2))
+    await message.answer('За вчера или за сегодня?', reply_markup=keyboard_builder(tasks_list=['За вчера', 'За сегодня'], grid=2))
     await state.set_state(ClientState.personal_rate_1)
 
 
@@ -438,7 +438,7 @@ async def personal_rate_1(call, state, flag=False) -> None:
 async def collected_data(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     chosen_collected_data = user_data.get('chosen_collected_data', [])
-    keyboard = keyboard_builder(tasks_pool=['Шаги', 'Сон'], add_dell=False, chosen=chosen_collected_data, grid=2, price_tag=False)
+    keyboard = keyboard_builder(tasks_list=['Шаги', 'Сон'], add_dell=False, chosen=chosen_collected_data, grid=2, price_tag=False)
     await message.answer(reply_markup=keyboard, text='Зеленая галочка означает что настройки будут работать,'
                                                      ' серая - что выключены')
     await state.set_state(ClientState.collected_data)
@@ -460,7 +460,7 @@ async def collected_data_proceed(call, state):
     await state.update_data(chosen_collected_data=chosen_collected_data)
     await state.update_data(daily_chosen_tasks=[])
     await edit_database(chosen_collected_data=chosen_collected_data, user_id=call.message.from_user.id)
-    keyboard = keyboard_builder(tasks_pool=['Шаги', 'Сон'], chosen=chosen_collected_data,
+    keyboard = keyboard_builder(tasks_list=['Шаги', 'Сон'], chosen=chosen_collected_data,
                                 add_dell=False, grid=2)
     await bot.edit_message_reply_markup(
         chat_id=call.message.chat.id,
@@ -618,7 +618,7 @@ async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
         data = await state.get_data()
         if 'scheduler_arguments' in data:
             output = [key.split('Я напомню вам : ')[1].replace('"', '') for key in data['scheduler_arguments'].keys()]
-            keyboard = keyboard_builder(tasks_pool=output, chosen=[], add_dell=True)
+            keyboard = keyboard_builder(tasks_list=output, chosen=[], add_dell=True)
             await message.answer('Ваши задачи', reply_markup=keyboard)
             await message.answer(
                 'Для удаления выберите интересующие вас дела и нажмите "Удалить"\n'
@@ -673,7 +673,7 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         else:
             scheduler_arguments_inp = [key.split('Я напомню вам : ')[1].replace('"', '')
                                        for key in user_data['scheduler_arguments']]
-            keyboard = keyboard_builder(tasks_pool=scheduler_arguments_inp, chosen=date_chosen_tasks, add_dell=True)
+            keyboard = keyboard_builder(tasks_list=scheduler_arguments_inp, chosen=date_chosen_tasks, add_dell=True)
             await call.message.edit_reply_markup(reply_markup=keyboard)
 
         await state.update_data(scheduler_arguments=scheduler_arguments, date_chosen_tasks=[])
@@ -695,7 +695,7 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         else:
             date_chosen_tasks.append(scheduler_arguments[data])
         await state.update_data(date_chosen_tasks=date_chosen_tasks)
-        keyboard = keyboard_builder(tasks_pool=scheduler_arguments, chosen=date_chosen_tasks, add_dell=True)
+        keyboard = keyboard_builder(tasks_list=scheduler_arguments, chosen=date_chosen_tasks, add_dell=True)
         await call.message.edit_reply_markup(reply_markup=keyboard)
 
 
@@ -713,7 +713,7 @@ async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
 async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
     user_message = normalized(message.text)
     if user_message == 'в день недели':
-        keyboard = keyboard_builder(tasks_pool=['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу',
+        keyboard = keyboard_builder(tasks_list=['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу',
                                          'воскресенье'], grid=1, add_dell=False, price_tag=False, chosen=[], last_button="🚀Отправить 🚀")
         await message.answer(
             'В какой день недели?', reply_markup=keyboard)
@@ -772,7 +772,7 @@ async def date_jobs_week(call: types.CallbackQuery, state: FSMContext) -> None:
         else:
             date_jobs_week_chosen_tasks.append(data)
 
-        keyboard = keyboard_builder(tasks_pool=date_jobs_week_list, chosen=date_jobs_week_chosen_tasks, grid=1, add_dell=False, price_tag=False, last_button="🚀Отправить 🚀")
+        keyboard = keyboard_builder(tasks_list=date_jobs_week_list, chosen=date_jobs_week_chosen_tasks, grid=1, add_dell=False, price_tag=False, last_button="🚀Отправить 🚀")
         await call.message.edit_reply_markup(reply_markup=keyboard)
         await state.update_data(date_jobs_week_chosen_tasks=date_jobs_week_chosen_tasks)
 
@@ -882,7 +882,7 @@ async def change_one_time_tasks(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     one_time_tasks = user_data.get('one_time_tasks', [])
     one_time_chosen_tasks = user_data.get('one_time_chosen_tasks', [])
-    keyboard = keyboard_builder(tasks_pool=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+    keyboard = keyboard_builder(tasks_list=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
     await message.answer('Ваши разовые дела', reply_markup=keyboard)
     # if one_time_tasks:
     #     await message.answer(
@@ -918,7 +918,7 @@ async def change_one_time_tasks_2(call, state) -> None:
         await state.update_data(one_time_chosen_tasks=[], one_time_tasks=updated_tasks)
 
         # Перестраиваем клавиатуру с обновленным списком задач и ПУСТЫМ списком выбранных
-        keyboard = keyboard_builder(tasks_pool=updated_tasks, chosen=[], grid=1, add_dell=True)
+        keyboard = keyboard_builder(tasks_list=updated_tasks, chosen=[], grid=1, add_dell=True)
         await call.message.edit_reply_markup(reply_markup=keyboard)
 
     else:
@@ -932,7 +932,7 @@ async def change_one_time_tasks_2(call, state) -> None:
         # Обновляем состояние только для выбранных задач
         await state.update_data(one_time_chosen_tasks=one_time_chosen_tasks)
 
-        keyboard = keyboard_builder(tasks_pool=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+        keyboard = keyboard_builder(tasks_list=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
         await call.message.edit_reply_markup(reply_markup=keyboard)
 
 
@@ -951,7 +951,7 @@ async def change_one_time_tasks_3(message: Message, state: FSMContext) -> None:
         else:
             one_time_tasks.append(i)
     one_time_tasks = list(set(one_time_tasks))
-    keyboard = keyboard_builder(tasks_pool=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+    keyboard = keyboard_builder(tasks_list=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
     await message.edit_reply_markup(reply_markup=keyboard)
     await edit_database(one_time_tasks=one_time_tasks, user_id=message.from_user.id)
     await state.update_data(one_time_tasks=one_time_tasks, one_time_chosen_tasks=[])
