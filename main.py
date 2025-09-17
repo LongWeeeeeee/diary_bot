@@ -429,9 +429,8 @@ async def personal_rate_1(call, state, flag=False) -> None:
             await bot.delete_message(message.chat.id, previous_diary)
         except:
             pass
-    saved_daily_tasks = user_data.get('daily_tasks', {})
     await state.update_data(daily_chosen_tasks=[], one_time_chosen_tasks=[], session_accrued_tasks=[],
-                            today_tasks=saved_daily_tasks.copy())
+                            today_tasks={}, sunrise=None)
     await start(message=message, state=state)
 
 
