@@ -245,7 +245,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
 
     elif data == 'Сохранить':
         for key, value in today_tasks.copy().items():
-            if value == 'закат ☀️':
+            if value not in tasks_pool:
                 del today_tasks[key]
         # Save the current temporary schedule (today_tasks) as the permanent one (daily_tasks)
         await state.update_data(daily_tasks=today_tasks, daily_tasks_not_time=today_tasks_not_time)

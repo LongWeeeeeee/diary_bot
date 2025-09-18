@@ -362,7 +362,6 @@ async def tasks_pool_function(message, state: FSMContext):
 async def scheduler_list(message_or_call, state, out_message, user_data, **kwargs):
     # 0) Пользователю — подтверждение
     message_obj = getattr(message_or_call, 'message', message_or_call)
-    await message_obj.answer(out_message)
 
     # 1) Берем актуальные данные из FSM и обновляем scheduler_arguments
     data = await state.get_data()
