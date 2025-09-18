@@ -663,7 +663,7 @@ async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
                 reply_markup=generate_keyboard(['В Главное Меню']))
             await state.set_state(ClientState.date_jobs)
         else:
-            await message.answer('Введите новое дело и время через "-". Например:\ncходить на кружок - 18:00', reply_markup=generate_keyboard(['В Главное Меню']))
+            await message.answer('Введите новое дело и время через "-". Например:\ncходить на кружок - 18:00\n\nЕсли дело без времени, то впишите просто дело', reply_markup=generate_keyboard(['В Главное Меню']))
             await state.set_state(ClientState.date_jobs_1)
     else:
         await start(message=message, state=state)
@@ -717,7 +717,7 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         await edit_database(scheduler_arguments=scheduler_arguments, user_id=call.from_user.id)
 
     elif data == 'Добавить':
-        await call.message.answer('ведите новое дело и время через "-". Например:\ncходить на кружок - 18:00',)
+        await call.message.answer('Введите новое дело и время через "-". Например:\ncходить на кружок - 18:00\n\nЕсли дело без времени, то впишите просто дело',)
         await state.update_data(date_jobs_call=call)
         await state.set_state(ClientState.date_jobs_1)
 
@@ -738,9 +738,6 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
 
 @dp.message(StateFilter(ClientState.date_jobs_1))
 async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
-    if len(message.text.replace(' - ', '-').split('-')) == 1:
-        await message.answer('Неправильная структура дела. Должно быть: "дело - время"')
-        return
     await state.update_data(new_date_jobs=message.text)
     keyboard = generate_keyboard(['В день недели', 'Число месяца', 'Каждый год', 'Разово'])
     await message.answer('Выберите как и когда вы бы желали чтобы вам напомнили об этом деле', reply_markup=keyboard)

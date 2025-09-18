@@ -479,16 +479,22 @@ async def executing_scheduler_job(state, out_message):
     except IndexError:
         print(f"Error parsing job text from: {out_message}")
         return
-    job, job_timing = text_normalized.split('-')[0], text_normalized.split('-')[1].split(' ')[0]
-    # 1. Безопасно получаем список one_time_tasks из состояния
-    # Если его нет, создаем пустой список
-    today_tasks = user_states_data.get('today_tasks', {})
+    tmp = text_normalized.split('-')
+    if len(tmp) == 2:
+        job, job_timing = text_normalized.split('-')[0], text_normalized.split('-')[1].split(' ')[0]
+        # 1. Безопасно получаем список one_time_tasks из состояния
+        # Если его нет, создаем пустой список
+        today_tasks = user_states_data.get('today_tasks', {})
 
-    # 2. Добавляем новую задачу в список, если её там ещё нет
-    today_tasks[job_timing] = job
+        # 2. Добавляем новую задачу в список, если её там ещё нет
+        today_tasks[job_timing] = job
 
-    # 3. Обновляем состояние и базу данных
-    await state.update_data(today_tasks=today_tasks)
+        # 3. Обновляем состояние и базу данных
+        await state.update_data(today_tasks=today_tasks)
+    else:
+        today_tasks_not_time = user_states_data.get('today_tasks_not_time', [])
+        today_tasks_not_time.append(text_normalized)
+        await state.update_data(today_tasks_not_time=today_tasks_not_time)
     # Предполагаем, что edit_database требует user_id, как в предыдущей рекомендации.
 
     # 4. Если это было разовое напоминание (trigger='date'), удаляем его из scheduler_arguments
