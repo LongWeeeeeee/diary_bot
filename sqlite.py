@@ -32,13 +32,16 @@ async def create_profile(user_id):
 async def edit_database(user_id, **kwargs):
     try:
         db.execute("BEGIN TRANSACTION")
+        # 1) гарантируем, что строка существует
+        cur.execute("INSERT OR IGNORE INTO profile (user_id) VALUES (?)", (user_id,))
+        # 2) обновляем только разрешённые поля
         for name, value_to_dump in kwargs.items():
-            if name not in ALLOWED_COLUMNS:
+            if name not in ALLOWED_COLUMNS or name == "user_id":
                 continue
             value = json.dumps(value_to_dump, ensure_ascii=False)
             cur.execute(f"UPDATE profile SET {name} = ? WHERE user_id = ?", (value, user_id))
         db.commit()
-    except Exception as e:
+    except Exception:
         db.rollback()
         raise
 

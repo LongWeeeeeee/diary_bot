@@ -359,16 +359,20 @@ async def tasks_pool_function(message, state: FSMContext):
         )
     await state.set_state(ClientState.greet)
 
-async def scheduler_list(message_or_call, state, out_message, user_data, **kwargs):
-    # 0) Пользователю — подтверждение
-    message_obj = getattr(message_or_call, 'message', message_or_call)
+async def scheduler_list(message_or_call, state, out_message, userdata, **kwargs):
+    # определить корректный actor_id
+    if isinstance(message_or_call, types.CallbackQuery):
+        actor_id = message_or_call.from_user.id
+    else:
+        actor_id = message_or_call.from_user.id
 
-    # 1) Берем актуальные данные из FSM и обновляем scheduler_arguments
     data = await state.get_data()
     scheduler_arguments = data.get('scheduler_arguments', {})
-    scheduler_arguments[out_message] = {**kwargs}
-    await edit_database(scheduler_arguments=scheduler_arguments, user_id=message_obj.from_user.id)
-    await state.update_data(scheduler_arguments=scheduler_arguments, user_id=message_obj.from_user.id)
+    scheduler_arguments[out_message] = kwargs
+
+    # использовать actor_id, а не message_obj.from_user.id
+    await edit_database(scheduler_arguments=scheduler_arguments, user_id=actor_id)
+    await state.update_data(scheduler_arguments=scheduler_arguments, user_id=actor_id)
 
     # 2) Немедленно добавляем job в APScheduler (без ожидания рестарта)
     values_copy = scheduler_arguments[out_message].copy()
