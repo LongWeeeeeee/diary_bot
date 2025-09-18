@@ -353,15 +353,39 @@ async def tasks_pool_function(message, state: FSMContext):
     await state.set_state(ClientState.greet)
 
 async def scheduler_list(message, state, out_message, user_data, **kwargs):
-    # загрузка аргументов в database
+    # 0) Пользователю — подтверждение
     await message.answer(out_message)
-    try:
-        scheduler_arguments = user_data.get('scheduler_arguments', {})
-        scheduler_arguments[out_message] = {**kwargs}
-    except KeyError:
-        scheduler_arguments = {out_message: {**kwargs}}
+
+    # 1) Берем актуальные данные из FSM и обновляем scheduler_arguments
+    data = await state.get_data()
+    scheduler_arguments = data.get('scheduler_arguments', {})
+    scheduler_arguments[out_message] = {**kwargs}
     await edit_database(scheduler_arguments=scheduler_arguments, user_id=message.from_user.id)
-    await state.update_data(scheduler_arguments=scheduler_arguments)
+    await state.update_data(scheduler_arguments=scheduler_arguments, user_id=message.from_user.id)
+
+    # 2) Немедленно добавляем job в APScheduler (без ожидания рестарта)
+    values_copy = scheduler_arguments[out_message].copy()
+    values_copy['args'] = (state, out_message)
+
+    if 'date' in values_copy:
+        values_copy['date'] = datetime.strptime(values_copy['date'], '%Y-%m-%d')
+    if 'run_date' in values_copy:
+        values_copy['run_date'] = datetime.strptime(values_copy['run_date'], '%Y-%m-%d %H:%M')
+    if 'day_of_week' in values_copy and isinstance(values_copy['day_of_week'], list):
+        values_copy['day_of_week'] = values_copy['day_of_week'][0]
+
+    unique_id = generate_unique_id_from_args(values_copy)
+    if not any(job.id == unique_id for job in scheduler.get_jobs()):
+        values_copy['id'] = unique_id
+        scheduler.add_job(executing_scheduler_job, **values_copy)
+
+    # 3) Если целевой день недели — сегодня, исполняем сразу один раз
+    if 'day_of_week' in values_copy:
+        now = datetime.now(TARGET_TZ)
+        today_dow = now.strftime('%a').lower()[:3]  # 'mon'..'sun'
+        if values_copy['day_of_week'] == today_dow:
+            await executing_scheduler_job(state, out_message)
+
 
 
 async def start(state, message) -> None:
