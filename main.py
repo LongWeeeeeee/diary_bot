@@ -7,6 +7,7 @@ import traceback
 import re
 from keys import ADMIN_ID
 from aiogram import types
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile
 from aiogram.types import Message
@@ -78,7 +79,7 @@ async def go_to_main_menu(message: Message, state: FSMContext) -> None:
     await start(message=message, state=state)
 
 
-@dp.message(lambda message: message.text and message.text.lower() == 'редактировать список дел', ClientState.settings)
+@dp.message(lambda message: message.text and message.text.lower() == 'редактировать список дел', StateFilter(ClientState.settings))
 async def edit_tasks_pool_handler(message: Message, state: FSMContext):
     user_data = await state.get_data()
     tasks_pool = user_data.get('tasks_pool', [])
@@ -96,7 +97,7 @@ async def edit_tasks_pool_handler(message: Message, state: FSMContext):
     await state.set_state(ClientState.edit_tasks_pool)
 
 
-@dp.message(ClientState.new_today_tasks)
+@dp.message(StateFilter(ClientState.new_today_tasks))
 async def new_today_tasks(message: Message, state: FSMContext = None) -> None:
     data = message.text
     user_data = await state.get_data()
@@ -130,7 +131,7 @@ async def new_today_tasks(message: Message, state: FSMContext = None) -> None:
         return
 
 
-@dp.callback_query(ClientState.edit_tasks_pool)
+@dp.callback_query(StateFilter(ClientState.edit_tasks_pool))
 async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     user_data = await state.get_data()
@@ -139,6 +140,9 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
     daily_tasks = user_data.get('daily_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
     edit_tasks_pool_chosen = user_data.get('edit_tasks_pool_chosen', [])
+    today_tasks_not_time = user_data.get('today_tasks_not_time', [])
+    today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
+
     if call.data == "Удалить":
         if not edit_tasks_pool_chosen:
             await call.answer("Вы ничего не выбрали для удаления.", show_alert=True)
@@ -152,6 +156,10 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
                         if key in daily_chosen_tasks:
                             daily_chosen_tasks.remove(key)
                         del daily_tasks_copy[key]
+            if name in today_tasks_not_time:
+                today_tasks_not_time.remove(name)
+            if name in today_tasks_not_time_chosen:
+                today_tasks_not_time_chosen.remove(name)
             if name in daily_tasks.values():
                 for key in daily_tasks.keys():
                     if today_tasks[key] == name:
@@ -164,7 +172,8 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
         keyboard = keyboard_builder(tasks_list=tasks_pool, add_dell=True,
                                     chosen=edit_tasks_pool_chosen)
         await state.update_data(tasks_pool=tasks_pool, daily_tasks=daily_tasks_copy, daily_chosen_tasks=daily_chosen_tasks,
-                                today_tasks=today_tasks_copy, edit_tasks_pool_chosen=[])
+                                today_tasks=today_tasks_copy, edit_tasks_pool_chosen=[], today_tasks_not_time=today_tasks_not_time,
+                                today_tasks_not_time_chosen=today_tasks_not_time_chosen)
         await edit_database(tasks_pool=tasks_pool, user_id=call.from_user.id)
         await call.message.edit_reply_markup(reply_markup=keyboard)
     elif call.data == 'Добавить':
@@ -182,7 +191,7 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
         await state.update_data(edit_tasks_pool_chosen=edit_tasks_pool_chosen)
 
 
-@dp.message(ClientState.add_tasks_pool)
+@dp.message(StateFilter(ClientState.add_tasks_pool))
 async def add_tasks_pool(message, state: FSMContext):
     data = message.text
     normalized = re.sub(r'\s*,\s*', ', ', data).split(', ')
@@ -204,7 +213,7 @@ async def add_tasks_pool(message, state: FSMContext):
 
 
 
-@dp.callback_query(ClientState.greet)
+@dp.callback_query(StateFilter(ClientState.greet))
 async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=False):
     await call.answer()
     data = call.data
@@ -308,7 +317,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         )
         await call.message.edit_reply_markup(reply_markup=keyboard)
 
-@dp.callback_query(ClientState.change_tasks_pool_1)
+@dp.callback_query(StateFilter(ClientState.change_tasks_pool_1))
 async def proceed_tasks_pool_1(call, state: FSMContext) -> None:
     await call.answer()
     user_data = await state.get_data()
@@ -353,7 +362,7 @@ async def get_valid_number(message: Message, state: FSMContext, field: str, prom
         await message.answer(f'"{message.text}" должно быть числом. Попробуйте снова (например, 12.5).')
         # Остаёмся в текущем состоянии, ожидая новый ввод
 
-@dp.message(ClientState.steps)
+@dp.message(StateFilter(ClientState.steps))
 async def process_steps(message: Message, state: FSMContext):
     if message.text in negative_responses:
         await state.update_data(my_steps=0.0)
@@ -363,7 +372,7 @@ async def process_steps(message: Message, state: FSMContext):
         await get_valid_number(message, state, 'my_steps', 'Введите индекс качества сна', ClientState.total_sleep, min_val=0)
 
 
-@dp.message(ClientState.total_sleep)
+@dp.message(StateFilter(ClientState.total_sleep))
 async def process_total_sleep(message: Message, state: FSMContext) -> None:
     if message.text not in negative_responses:
         try:
@@ -380,7 +389,7 @@ async def process_total_sleep(message: Message, state: FSMContext) -> None:
         await state.set_state(ClientState.about_day)
 
 
-@dp.message(ClientState.about_day)
+@dp.message(StateFilter(ClientState.about_day))
 async def process_about_day(message: Message, state: FSMContext) -> None:
     user_message = message.text
     if len(user_message) < 120:
@@ -391,7 +400,7 @@ async def process_about_day(message: Message, state: FSMContext) -> None:
         await state.set_state(ClientState.personal_rate)
 
 
-@dp.message(ClientState.personal_rate)
+@dp.message(StateFilter(ClientState.personal_rate))
 async def process_personal_rate(message: Message, state: FSMContext) -> None:
     try:
         personal_rate = int(message.text)
@@ -406,7 +415,7 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
 
 
 
-@dp.callback_query(ClientState.personal_rate_1)
+@dp.callback_query(StateFilter(ClientState.personal_rate_1))
 async def personal_rate_1(call, state, flag=False) -> None:
     await call.answer()
     user_data = await state.get_data()
@@ -464,7 +473,7 @@ async def personal_rate_1(call, state, flag=False) -> None:
     await start(message=message, state=state)
 
 
-@dp.message(lambda message: message.text and message.text.lower() == 'опрашиваемые данные', ClientState.settings)
+@dp.message(lambda message: message.text and message.text.lower() == 'опрашиваемые данные', StateFilter(ClientState.settings))
 async def collected_data(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     chosen_collected_data = user_data.get('chosen_collected_data', [])
@@ -474,7 +483,7 @@ async def collected_data(message: Message, state: FSMContext) -> None:
     await state.set_state(ClientState.collected_data)
 
 
-@dp.callback_query(ClientState.collected_data)
+@dp.callback_query(StateFilter(ClientState.collected_data))
 async def collected_data_proceed(call, state):
     await call.answer()
     data = int(call.data)
@@ -498,7 +507,7 @@ async def collected_data_proceed(call, state):
         reply_markup=keyboard)
 
 
-@dp.message(lambda message: message.text and message.text.lower() == 'мои рекорды', ClientState.settings)
+@dp.message(lambda message: message.text and message.text.lower() == 'мои рекорды', StateFilter(ClientState.settings))
 async def my_records(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     if user_data:
@@ -510,7 +519,7 @@ async def my_records(message: Message, state: FSMContext) -> None:
         await start(message=message, state=state)
 
 
-@dp.message(lambda message: message.text and message.text.lower() == 'напоминания', ClientState.settings)
+@dp.message(lambda message: message.text and message.text.lower() == 'напоминания', StateFilter(ClientState.settings))
 async def notifications(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     await state.update_data(message=message)
@@ -530,8 +539,8 @@ async def notifications(message: Message, state: FSMContext) -> None:
     date_builder.adjust(2, 1)
     notifications_data = user_data.get('notifications_data', {})
     if notifications_data.get('hours', ''):
-        hours = notifications_data['hours']
-        minutes = notifications_data['minutes']
+        hours = int(notifications_data['hours'])
+        minutes = int(notifications_data['minutes'])
     else:
         hours = 9
         minutes = 0
@@ -540,7 +549,7 @@ async def notifications(message: Message, state: FSMContext) -> None:
     await state.set_state(ClientState.notification_proceed)
 
 
-@dp.callback_query(ClientState.notification_proceed)
+@dp.callback_query(StateFilter(ClientState.notification_proceed))
 async def notifications_proceed(call, state):
     await call.answer()
     data = int(call.data)
@@ -548,8 +557,8 @@ async def notifications_proceed(call, state):
     message = user_data.get('message', None)
     notifications_data = user_data.get('notifications_data', {})
     if notifications_data.get('hours', ''):
-        hours = notifications_data['hours']
-        minutes = notifications_data['minutes']
+        hours = int(notifications_data['hours'])
+        minutes = int(notifications_data['minutes'])
     else:
         hours = 9
         minutes = 0
@@ -600,7 +609,7 @@ async def notifications_proceed(call, state):
 
 
 
-@dp.message(ClientState.notification_set_date)
+@dp.message(StateFilter(ClientState.notification_set_date))
 async def notification_set_date(message, state):
     user_data = await state.get_data()
     notifications_data = user_data.get('notifications_data', {})
@@ -617,8 +626,6 @@ async def notification_set_date(message, state):
     except ValueError:
         await message.answer('Часы и минуты должны быть числами.')
         return
-    hours = notification_time[0]
-    minutes = notification_time[1]
     notifications_data['hours'] = hours
     notifications_data['minutes'] = minutes
     await edit_database(notifications_data=notifications_data, user_id=message.from_user.id)
@@ -639,7 +646,7 @@ async def notification_set_date(message, state):
     await start(message=message, state=state)
 
 
-@dp.message(lambda message: message.text and message.text.lower() == 'дела в определенную дату', ClientState.settings)
+@dp.message(lambda message: message.text and message.text.lower() == 'дела в определенную дату', StateFilter(ClientState.settings))
 async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     await state.update_data(message=message)
@@ -662,7 +669,7 @@ async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
         await start(message=message, state=state)
 
 
-@dp.callback_query(ClientState.date_jobs)
+@dp.callback_query(StateFilter(ClientState.date_jobs))
 async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     data = call.data
@@ -729,7 +736,7 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         await call.message.edit_reply_markup(reply_markup=keyboard)
 
 
-@dp.message(ClientState.date_jobs_1)
+@dp.message(StateFilter(ClientState.date_jobs_1))
 async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
     if len(message.text.replace(' - ', '-').split('-')) == 1:
         await message.answer('Неправильная структура дела. Должно быть: "дело - время"')
@@ -739,7 +746,7 @@ async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
     await state.set_state(ClientState.date_jobs_2)
 
 
-@dp.message(ClientState.date_jobs_2)
+@dp.message(StateFilter(ClientState.date_jobs_2))
 async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
     user_message = normalized(message.text)
     if user_message == 'в день недели':
@@ -767,7 +774,7 @@ async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
 
 
 
-@dp.callback_query(ClientState.date_jobs_week)
+@dp.callback_query(StateFilter(ClientState.date_jobs_week))
 async def date_jobs_week(call: types.CallbackQuery, state: FSMContext) -> None:
     await call.answer()
     data = call.data
@@ -828,7 +835,7 @@ async def date_jobs_week(call: types.CallbackQuery, state: FSMContext) -> None:
 #     #     await rebuild_keyboard(state, 'date_chosen_tasks')
 
 
-@dp.message(ClientState.date_jobs_month)
+@dp.message(StateFilter(ClientState.date_jobs_month))
 async def date_jobs_month(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     new_date_jobs = user_data.get('new_date_jobs', {})
@@ -844,7 +851,7 @@ async def date_jobs_month(message: Message, state: FSMContext) -> None:
     #     await rebuild_keyboard(state, 'date_chosen_tasks')
 
 
-@dp.message(ClientState.date_jobs_year)
+@dp.message(StateFilter(ClientState.date_jobs_year))
 async def date_jobs_year(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     new_date_jobs = user_data.get('new_date_jobs', {})
@@ -860,7 +867,7 @@ async def date_jobs_year(message: Message, state: FSMContext) -> None:
     #     await rebuild_keyboard(state, 'date_chosen_tasks')
 
 
-@dp.message(ClientState.date_jobs_once)
+@dp.message(StateFilter(ClientState.date_jobs_once))
 async def date_jobs_once(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     new_date_jobs = user_data.get('new_date_jobs', 'Напоминание') # Безопасное получение
@@ -878,7 +885,8 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
     # scheduled_dt_aware = now_aware + datetime.timedelta(minutes=2)
 
     naive_dt = datetime.datetime.combine(user_date_part, datetime.time(0, 0))
-    scheduled_dt_aware = TARGET_TZ.localize(naive_dt)
+    # ZoneInfo: assign tzinfo directly
+    scheduled_dt_aware = naive_dt.replace(tzinfo=TARGET_TZ)
 
 
     # Проверяем, что рассчитанное время > текущего времени (оба aware)
@@ -894,7 +902,7 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
         # НЕ передавайте строку strftime!
         try:
             await scheduler_list(message, state, out_message, user_data, trigger="date",
-                                 run_date=scheduled_dt_aware.strftime("%Y-%m-%d %H:%M"),
+                                 run_date=scheduled_dt_aware.isoformat(),
                                  args=new_date_jobs)
 
         except Exception as e:
@@ -907,7 +915,7 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
         await message.answer(f'Рассчитанное время {scheduled_dt_aware.strftime("%Y-%m-%d %H:%M %Z%z")} уже в прошлом.')
 
 
-@dp.message(lambda message: message.text and message.text.lower() == 'разовые дела', ClientState.settings)
+@dp.message(lambda message: message.text and message.text.lower() == 'разовые дела', StateFilter(ClientState.settings))
 async def change_one_time_tasks(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     one_time_tasks = user_data.get('one_time_tasks', [])
@@ -923,7 +931,7 @@ async def change_one_time_tasks(message: Message, state: FSMContext) -> None:
     await state.set_state(ClientState.one_time_tasks_2)
 
 
-@dp.callback_query(ClientState.one_time_tasks_2)
+@dp.callback_query(StateFilter(ClientState.one_time_tasks_2))
 async def change_one_time_tasks_2(call, state) -> None:
     await call.answer()
     data = call.data
@@ -966,7 +974,7 @@ async def change_one_time_tasks_2(call, state) -> None:
         await call.message.edit_reply_markup(reply_markup=keyboard)
 
 
-@dp.message(ClientState.one_time_tasks_3)
+@dp.message(StateFilter(ClientState.one_time_tasks_3))
 async def change_one_time_tasks_3(message: Message, state: FSMContext) -> None:
     user_tasks = normalized(message.text).split(', ')
     user_data = await state.get_data()
@@ -1035,14 +1043,23 @@ async def on_error_handler(event: ErrorEvent):
         )
         # Затем отправляем файлы
         await bot.send_document(chat_id=ADMIN_ID, document=traceback_file)
+        await bot.send_document(chat_id=ADMIN_ID, document=update_file)
 
         # (Опционально) Отправляем пользователю сообщение
-        user_chat_id = event.update.message.chat.id if event.update.message else event.update.callback_query.message.chat.id
+        # Попытка безопасно уведомить пользователя (если есть контекст чата)
+        user_chat_id = None
+        try:
+            if event.update.message:
+                user_chat_id = event.update.message.chat.id
+            elif event.update.callback_query and event.update.callback_query.message:
+                user_chat_id = event.update.callback_query.message.chat.id
+        except Exception:
+            user_chat_id = None
         if user_chat_id:
-             await bot.send_message(
+            await bot.send_message(
                 chat_id=user_chat_id,
                 text="😕 Ой, что-то пошло не так. Я уже сообщил разработчику о проблеме. Пожалуйста, попробуйте снова позже."
-             )
+            )
 
     except Exception as e:
         logging.error(f"Критическая ошибка: не удалось отправить уведомление об ошибке. Причина: {e}")
@@ -1057,7 +1074,7 @@ async def main():
     )
 
     # Регистрация обработчика ошибок
-    dp.error.register(on_error_handler)
+    dp.errors.register(on_error_handler)
     logging.info("Обработчик ошибок зарегистрирован.")
     # --------------------
 

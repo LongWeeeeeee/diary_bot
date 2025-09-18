@@ -15,7 +15,6 @@ import pandas as pd
 from aiogram import types
 import hashlib
 from sqlite import edit_database
-import pytz
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import logging
@@ -29,7 +28,7 @@ os.environ['TZ'] = 'Etc/UTC'
 
 scheduler = AsyncIOScheduler()
 scheduler.configure(timezone='Europe/Moscow')
-TARGET_TZ = pytz.timezone('Europe/Moscow')
+TARGET_TZ = ZoneInfo("Europe/Moscow")
 class ClientState(StatesGroup):
     greet = State()
     start = State()
@@ -185,9 +184,17 @@ async def scheduler_in(data, state, message):
             values_copy = values.copy()
             values_copy['args'] = (state, key)
             if 'date' in values_copy:
-                values_copy['date'] = datetime.strptime(values['date'], '%Y-%m-%d')
+                try:
+                    values_copy['date'] = datetime.fromisoformat(values['date'])
+                except Exception:
+                    values_copy['date'] = datetime.strptime(values['date'], '%Y-%m-%d')
             elif 'run_date' in values_copy:
-                values_copy['run_date'] = datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
+                try:
+                    values_copy['run_date'] = datetime.fromisoformat(values['run_date'])
+                except Exception:
+                    values_copy['run_date'] = datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
+                if values_copy['run_date'].tzinfo is None:
+                    values_copy['run_date'] = values_copy['run_date'].replace(tzinfo=TARGET_TZ)
                 current_date = datetime.now()
                 if current_date > (values_copy['run_date'] + timedelta(minutes=1)):
                     del data['scheduler_arguments'][key]
@@ -352,25 +359,44 @@ async def tasks_pool_function(message, state: FSMContext):
         )
     await state.set_state(ClientState.greet)
 
-async def scheduler_list(message, state, out_message, user_data, **kwargs):
+async def scheduler_list(message_or_call, state, out_message, user_data, **kwargs):
     # 0) Пользователю — подтверждение
-    await message.answer(out_message)
+    message_obj = getattr(message_or_call, 'message', message_or_call)
+    await message_obj.answer(out_message)
 
     # 1) Берем актуальные данные из FSM и обновляем scheduler_arguments
     data = await state.get_data()
     scheduler_arguments = data.get('scheduler_arguments', {})
     scheduler_arguments[out_message] = {**kwargs}
-    await edit_database(scheduler_arguments=scheduler_arguments, user_id=message.from_user.id)
-    await state.update_data(scheduler_arguments=scheduler_arguments, user_id=message.from_user.id)
+    await edit_database(scheduler_arguments=scheduler_arguments, user_id=message_obj.from_user.id)
+    await state.update_data(scheduler_arguments=scheduler_arguments, user_id=message_obj.from_user.id)
 
     # 2) Немедленно добавляем job в APScheduler (без ожидания рестарта)
     values_copy = scheduler_arguments[out_message].copy()
     values_copy['args'] = (state, out_message)
 
-    if 'date' in values_copy:
-        values_copy['date'] = datetime.strptime(values_copy['date'], '%Y-%m-%d')
+    # Normalize date/run_date inputs
+    if 'date' in values_copy and isinstance(values_copy['date'], str):
+        try:
+            values_copy['date'] = datetime.fromisoformat(values_copy['date'])
+        except Exception:
+            try:
+                values_copy['date'] = datetime.strptime(values_copy['date'], '%Y-%m-%d')
+            except Exception:
+                pass
     if 'run_date' in values_copy:
-        values_copy['run_date'] = datetime.strptime(values_copy['run_date'], '%Y-%m-%d %H:%M')
+        rd = values_copy['run_date']
+        if isinstance(rd, str):
+            try:
+                values_copy['run_date'] = datetime.fromisoformat(rd)
+            except Exception:
+                try:
+                    values_copy['run_date'] = datetime.strptime(rd, '%Y-%m-%d %H:%M')
+                except Exception:
+                    pass
+        if isinstance(values_copy['run_date'], datetime) and values_copy['run_date'].tzinfo is None:
+            values_copy['run_date'] = values_copy['run_date'].replace(tzinfo=TARGET_TZ)
+
     if 'day_of_week' in values_copy and isinstance(values_copy['day_of_week'], list):
         values_copy['day_of_week'] = values_copy['day_of_week'][0]
 
@@ -546,8 +572,14 @@ async def diary_out(message):
 
     # Перебор и отправка последних 7 строк
     for index, row in last_entries.iterrows():
-        message_sheet = "{} | {} | {} | {} | {}".format(row["Дата"], row["Дела за день"], row["Шаги"],
-                            row["Sleep quality"], row['О дне'], row['My rate'])
+        message_sheet = "{} | {} | {} | {} | {} | {}".format(
+            row["Дата"],
+            row["Дела за день"],
+            row["Шаги"],
+            row["Sleep quality"],
+            row['О дне'],
+            row['My rate']
+        )
 
         # Разделение длинного сообщения на части
         message_parts = [message_sheet[i:i + 4096] for i in range(0, len(message_sheet), 4096)]
