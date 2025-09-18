@@ -453,15 +453,14 @@ async def executing_scheduler_job(state, out_message):
     job, job_timing = text_normalized.split('-')[0], text_normalized.split('-')[1].split(' ')[0]
     # 1. Безопасно получаем список one_time_tasks из состояния
     # Если его нет, создаем пустой список
-    daily_tasks = user_states_data.get('daily_tasks', {})
+    today_tasks = user_states_data.get('today_tasks', {})
 
     # 2. Добавляем новую задачу в список, если её там ещё нет
-    daily_tasks[job_timing] = job
+    today_tasks[job_timing] = job
 
     # 3. Обновляем состояние и базу данных
-    await state.update_data(daily_tasks=daily_tasks)
+    await state.update_data(today_tasks=today_tasks)
     # Предполагаем, что edit_database требует user_id, как в предыдущей рекомендации.
-    await edit_database(daily_tasks=daily_tasks, user_id=user_id)
 
     # 4. Если это было разовое напоминание (trigger='date'), удаляем его из scheduler_arguments
     scheduler_arguments = user_states_data.get('scheduler_arguments', {})
