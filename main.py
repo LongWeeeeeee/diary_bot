@@ -740,6 +740,7 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
 async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
     if len(message.text.replace(' - ', '-').split('-')) == 1:
         await message.answer('Неправильная структура дела. Должно быть: "дело - время"')
+        return
     await state.update_data(new_date_jobs=message.text)
     keyboard = generate_keyboard(['В день недели', 'Число месяца', 'Каждый год', 'Разово'])
     await message.answer('Выберите как и когда вы бы желали чтобы вам напомнили об этом деле', reply_markup=keyboard)
