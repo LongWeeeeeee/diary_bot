@@ -271,7 +271,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         keyboard = keyboard_builder(
             tasks_dict=today_tasks,
             tasks_list=today_tasks_not_time,
-            chosen=daily_chosen_tasks,  # Choices are now cleared
+            chosen=daily_chosen_tasks + today_tasks_not_time_chosen,  # Choices are now cleared
             grid=1,
             add_dell=True,
             add_save=True,
@@ -335,18 +335,18 @@ async def proceed_tasks_pool_1(call, state: FSMContext) -> None:
 
 
 
-async def rebuild_keyboard_with_chosen(data, call, chosen_tasks, state, tasks, today_tasks, grid=1):
-    if data in chosen_tasks:
-        chosen_tasks.remove(data)
-    else:
-        chosen_tasks.append(data)
-    # Обновляем именно daily_chosen_tasks в состоянии
-    await state.update_data(daily_chosen_tasks=chosen_tasks) # <--- Убедимся, что обновляем правильный ключ
-    keyboard = keyboard_builder(tasks_list=tasks, chosen=chosen_tasks, grid=grid, tasks_dict=today_tasks)
-    await bot.edit_message_reply_markup(
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        reply_markup=keyboard)
+# async def rebuild_keyboard_with_chosen(data, call, chosen_tasks, state, tasks, today_tasks, grid=1):
+#     if data in chosen_tasks:
+#         chosen_tasks.remove(data)
+#     else:
+#         chosen_tasks.append(data)
+#     # Обновляем именно daily_chosen_tasks в состоянии
+#     await state.update_data(daily_chosen_tasks=chosen_tasks) # <--- Убедимся, что обновляем правильный ключ
+#     keyboard = keyboard_builder(tasks_list=tasks, chosen=chosen_tasks, grid=grid, tasks_dict=today_tasks)
+#     await bot.edit_message_reply_markup(
+#         chat_id=call.message.chat.id,
+#         message_id=call.message.message_id,
+#         reply_markup=keyboard)
 
 
 

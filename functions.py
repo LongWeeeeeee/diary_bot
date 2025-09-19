@@ -312,7 +312,6 @@ async def handle_new_user(message: Message, state: FSMContext):
 @dp.message(lambda message: message.text and message.text.lower() == 'заполнить дневник')
 async def tasks_pool_function(message, state: FSMContext):
     user_data = await state.get_data()
-
     tasks_pool = user_data.get('tasks_pool', [])
     if not tasks_pool:
         await message.answer('Ваш список дел пуст! Добавьте ваши общие дела через запятую.')
@@ -325,6 +324,7 @@ async def tasks_pool_function(message, state: FSMContext):
     daily_tasks = user_data.get('daily_tasks', {})
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
     daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
+    daily_tasks_not_time_chosen = user_data.get('daily_tasks_not_time_chosen', [])
     if 'закат ☀️' not in today_tasks.values():
         if not today_tasks:
             today_tasks = daily_tasks.copy()
@@ -342,7 +342,7 @@ async def tasks_pool_function(message, state: FSMContext):
         tasks_dict=today_tasks,
         tasks_list=today_tasks_not_time,
         grid=1,
-        chosen=daily_chosen_tasks,
+        chosen=daily_chosen_tasks+daily_tasks_not_time_chosen,
         add_dell=True,
         last_button="🚀Отправить 🚀",
         add_save=True,
