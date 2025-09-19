@@ -141,7 +141,7 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
     edit_tasks_pool_chosen = user_data.get('edit_tasks_pool_chosen', [])
     today_tasks_not_time = user_data.get('today_tasks_not_time', [])
-    today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
+    daily_tasks_not_time_chosen = user_data.get('daily_tasks_not_time_chosen', [])
 
     if call.data == "Удалить":
         if not edit_tasks_pool_chosen:
@@ -158,8 +158,8 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
                         del daily_tasks_copy[key]
             if name in today_tasks_not_time:
                 today_tasks_not_time.remove(name)
-            if name in today_tasks_not_time_chosen:
-                today_tasks_not_time_chosen.remove(name)
+            if name in daily_tasks_not_time_chosen:
+                daily_tasks_not_time_chosen.remove(name)
             if name in daily_tasks.values():
                 for key in daily_tasks.keys():
                     if today_tasks[key] == name:
@@ -173,7 +173,7 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
                                     chosen=edit_tasks_pool_chosen)
         await state.update_data(tasks_pool=tasks_pool, daily_tasks=daily_tasks_copy, daily_chosen_tasks=daily_chosen_tasks,
                                 today_tasks=today_tasks_copy, edit_tasks_pool_chosen=[], today_tasks_not_time=today_tasks_not_time,
-                                today_tasks_not_time_chosen=today_tasks_not_time_chosen)
+                                daily_tasks_not_time_chosen=daily_tasks_not_time_chosen)
         await edit_database(tasks_pool=tasks_pool, user_id=call.from_user.id)
         await call.message.edit_reply_markup(reply_markup=keyboard)
     elif call.data == 'Добавить':
@@ -225,10 +225,9 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
     one_time_tasks = user_data.get('one_time_tasks', [])
     daily_tasks = user_data.get('daily_tasks', {})
     today_tasks_not_time = user_data.get('today_tasks_not_time', [])
-    today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
-
+    daily_tasks_not_time_chosen = user_data.get('daily_tasks_not_time_chosen', [])
     if data == 'Отправить':
-        await state.update_data(daily_chosen_tasks=daily_chosen_tasks, today_tasks_not_time_chosen=today_tasks_not_time_chosen)
+        await state.update_data(daily_chosen_tasks=daily_chosen_tasks, daily_tasks_not_time_chosen=daily_tasks_not_time_chosen)
         collected_data = user_data.get('chosen_collected_data', {})
         if 'Шаги' in collected_data:
             await call.message.answer("Сколько сделал шагов?")
@@ -253,7 +252,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         await call.message.answer('Расписание на день сохранено!', show_alert=True)
 
     elif data == 'Удалить':
-        if len(daily_chosen_tasks)==0 and len(today_tasks_not_time_chosen)==0:
+        if len(daily_chosen_tasks)==0 and len(daily_tasks_not_time_chosen)==0:
             await call.answer('Сначала выберите дела для удаления из расписания.', show_alert=True)
             return
 
@@ -261,17 +260,17 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         for time_key in daily_chosen_tasks:
             if time_key in today_tasks:
                 del today_tasks[time_key]
-        for task in today_tasks_not_time_chosen:
+        for task in daily_tasks_not_time_chosen:
             today_tasks_not_time.remove(task)
         # Reset choices and update state
         await state.update_data(today_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time,
-                                daily_chosen_tasks=[], today_tasks_not_time_chosen=[])
+                                daily_chosen_tasks=[], daily_tasks_not_time_chosen=[])
 
         # Re-render the keyboard with the updated lists
         keyboard = keyboard_builder(
             tasks_dict=today_tasks,
             tasks_list=today_tasks_not_time,
-            chosen=daily_chosen_tasks + today_tasks_not_time_chosen,  # Choices are now cleared
+            chosen=daily_chosen_tasks + daily_tasks_not_time_chosen,  # Choices are now cleared
             grid=1,
             add_dell=True,
             add_save=True,
@@ -300,16 +299,16 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
             await state.update_data(daily_chosen_tasks=daily_chosen_tasks)
         else:
             temp = today_tasks_not_time[int(data)]
-            if temp in today_tasks_not_time_chosen:
-                today_tasks_not_time_chosen.remove(temp)
+            if temp in daily_tasks_not_time_chosen:
+                daily_tasks_not_time_chosen.remove(temp)
             else:
-                today_tasks_not_time_chosen.append(temp)
-            await state.update_data(today_tasks_not_time_chosen=today_tasks_not_time_chosen)
+                daily_tasks_not_time_chosen.append(temp)
+            await state.update_data(daily_tasks_not_time_chosen=daily_tasks_not_time_chosen)
         # Rebuild keyboard to show the checkmark
         keyboard = keyboard_builder(
             tasks_dict=today_tasks,
             tasks_list=today_tasks_not_time,
-            chosen=daily_chosen_tasks + today_tasks_not_time_chosen,
+            chosen=daily_chosen_tasks + daily_tasks_not_time_chosen,
             grid=1,
             add_dell=True,
             last_button="🚀Отправить 🚀",
@@ -431,8 +430,8 @@ async def personal_rate_1(call, state, flag=False) -> None:
     daily_chosen_tasks = user_data.get('daily_chosen_tasks', {})
     one_time_tasks = user_data.get('one_time_tasks', [])
     today_tasks_not_time = user_data.get('today_tasks_not_time', [])
-    today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
-    today_tasks_not_time_activities = [task for task in today_tasks_not_time_chosen]
+    daily_tasks_not_time_chosen = user_data.get('daily_tasks_not_time_chosen', [])
+    today_tasks_not_time_activities = [task for task in daily_tasks_not_time_chosen]
     activities += today_tasks_not_time_activities
     personal_rate = user_data.get('personal_rate', None)
     message = user_data.get('message', None)
