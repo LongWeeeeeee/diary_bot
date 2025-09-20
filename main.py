@@ -247,8 +247,8 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
             if value not in tasks_pool:
                 del today_tasks[key]
         # Save the current temporary schedule (today_tasks) as the permanent one (daily_tasks)
-        await state.update_data(daily_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time)
-        await edit_database(daily_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time, user_id=call.from_user.id)
+        await state.update_data(daily_tasks=today_tasks, daily_tasks_not_time=today_tasks_not_time)
+        await edit_database(daily_tasks=today_tasks, daily_tasks_not_time=today_tasks_not_time, user_id=call.from_user.id)
         await call.message.answer('Расписание на день сохранено!', show_alert=True)
 
     elif data == 'Удалить':
