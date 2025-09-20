@@ -205,6 +205,11 @@ async def scheduler_in(data, state, message):
                 if 'day_of_week' in values_copy and isinstance(values_copy['day_of_week'], list):
                     values_copy['day_of_week'] = values_copy['day_of_week'][0]
                 scheduler.add_job(executing_scheduler_job, **values_copy)
+                if 'day_of_week' in values_copy:
+                    now = datetime.now(TARGET_TZ)
+                    today_dow = now.strftime('%a').lower()[:3]  # 'mon'..'sun'
+                    if values_copy['day_of_week'] == today_dow:
+                        await executing_scheduler_job(state, key)
 
         if len(data['scheduler_arguments']) == 0:
             del data['scheduler_arguments']
