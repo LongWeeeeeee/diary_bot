@@ -327,13 +327,13 @@ async def tasks_pool_function(message, state: FSMContext):
     today_tasks_not_time = user_data.get('today_tasks_not_time', [])
     today_tasks = user_data.get('today_tasks', {})
     daily_tasks = user_data.get('daily_tasks', {})
-    daily_chosen_tasks = user_data.get('daily_chosen_tasks', [])
-    daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
-    daily_tasks_not_time_chosen = user_data.get('daily_tasks_not_time_chosen', [])
+    today_tasks_chosen = user_data.get('today_tasks_chosen', [])
+    today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
     if 'закат ☀️' not in today_tasks.values():
         if not today_tasks:
             today_tasks = daily_tasks.copy()
         if not today_tasks_not_time:
+            daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
             today_tasks_not_time = daily_tasks_not_time.copy()
 
         if not sunrise or sunrise != now.strftime("%Y-%m-%d"):
@@ -347,7 +347,7 @@ async def tasks_pool_function(message, state: FSMContext):
         tasks_dict=today_tasks,
         tasks_list=today_tasks_not_time,
         grid=1,
-        chosen=daily_chosen_tasks+daily_tasks_not_time_chosen,
+        chosen=today_tasks_chosen+today_tasks_not_time_chosen,
         add_dell=True,
         last_button="🚀Отправить 🚀",
         add_save=True,
