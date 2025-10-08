@@ -480,6 +480,48 @@ async def personal_rate_1(call, state, flag=False) -> None:
             logging.debug(f"Could not delete previous diary message: {e}")
     await state.update_data(today_tasks_chosen=[], today_tasks_not_time_chosen=[], one_time_chosen_tasks=[], session_accrued_tasks=[],
                             today_tasks={}, today_tasks_not_time=[], sunrise=None)
+    
+    # Проверяем scheduled tasks и добавляем те, что запланированы на сегодня
+    updated_data = await state.get_data()
+    if 'scheduler_arguments' in updated_data:
+        from datetime import datetime as dt
+        from zoneinfo import ZoneInfo
+        from functions import executing_scheduler_job, TARGET_TZ
+        
+        now = dt.now(TARGET_TZ)
+        
+        for key in list(updated_data['scheduler_arguments'].keys()):
+            values = updated_data['scheduler_arguments'][key]
+            should_execute_today = False
+            
+            # Проверяем weekly tasks (day_of_week)
+            if 'day_of_week' in values:
+                today_dow = now.strftime('%a').lower()[:3]
+                if values['day_of_week'] == today_dow:
+                    should_execute_today = True
+            
+            # Проверяем monthly tasks (day of month)
+            elif 'day' in values and 'month' not in values:
+                if int(values['day']) == now.day:
+                    should_execute_today = True
+            
+            # Проверяем yearly tasks (specific day and month)
+            elif 'day' in values and 'month' in values:
+                if int(values['day']) == now.day and int(values['month']) == now.month:
+                    should_execute_today = True
+            
+            # Проверяем one-time tasks на сегодня
+            elif 'run_date' in values:
+                try:
+                    run_date = dt.fromisoformat(values['run_date'])
+                    if run_date.date() == now.date():
+                        should_execute_today = True
+                except:
+                    pass
+            
+            if should_execute_today:
+                await executing_scheduler_job(state, key)
+    
     await start(message=message, state=state)
 
 

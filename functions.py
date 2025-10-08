@@ -369,12 +369,12 @@ async def tasks_pool_function(message, state: FSMContext):
     today_tasks_chosen = user_data.get('today_tasks_chosen', [])
     today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
     if 'закат ☀️' not in today_tasks.values():
-        # Merge daily_tasks into today_tasks (daily_tasks should always be included)
-        # Only copy if today_tasks is empty OR if we need to add daily_tasks that aren't already there
+        # ВАЖНО: Мерджим daily_tasks в today_tasks, а не просто копируем
+        # Потому что scheduler мог уже добавить задачи в today_tasks
         if not today_tasks:
             today_tasks = daily_tasks.copy()
         else:
-            # Add daily_tasks that are not already in today_tasks
+            # Добавляем daily_tasks которых еще нет в today_tasks
             for time_key, task in daily_tasks.items():
                 if time_key not in today_tasks:
                     today_tasks[time_key] = task
@@ -383,7 +383,7 @@ async def tasks_pool_function(message, state: FSMContext):
             daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
             today_tasks_not_time = daily_tasks_not_time.copy()
         else:
-            # Add daily_tasks_not_time that are not already in today_tasks_not_time
+            # Добавляем daily_tasks_not_time которых еще нет
             daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
             for task in daily_tasks_not_time:
                 if task not in today_tasks_not_time:
@@ -396,7 +396,6 @@ async def tasks_pool_function(message, state: FSMContext):
                     today_tasks[sunrise.strftime("%H:%M")] = 'закат ☀️'
                     await state.update_data(today_tasks=today_tasks, sunrise=sunrise.strftime("%Y-%m-%d"), today_tasks_not_time=today_tasks_not_time)
                 else:
-                    # Could not get sunset time, skip adding sunset task
                     logger.warning("Could not fetch sunset time, skipping sunset task")
                     await state.update_data(today_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time)
             except Exception as e:
