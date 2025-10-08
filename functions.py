@@ -195,7 +195,7 @@ async def scheduler_in(data, state, message):
                     values_copy['run_date'] = datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
                 if values_copy['run_date'].tzinfo is None:
                     values_copy['run_date'] = values_copy['run_date'].replace(tzinfo=TARGET_TZ)
-                current_date = datetime.now()
+                current_date = datetime.now(TARGET_TZ)
                 if current_date > (values_copy['run_date'] + timedelta(minutes=1)):
                     del data['scheduler_arguments'][key]
                     continue
@@ -205,11 +205,42 @@ async def scheduler_in(data, state, message):
                 if 'day_of_week' in values_copy and isinstance(values_copy['day_of_week'], list):
                     values_copy['day_of_week'] = values_copy['day_of_week'][0]
                 scheduler.add_job(executing_scheduler_job, **values_copy)
+                
+                # Check if task should run today and execute immediately
+                now = datetime.now(TARGET_TZ)
+                should_execute_today = False
+                
+                # Check weekly tasks (day_of_week)
                 if 'day_of_week' in values_copy:
-                    now = datetime.now(TARGET_TZ)
                     today_dow = now.strftime('%a').lower()[:3]  # 'mon'..'sun'
                     if values_copy['day_of_week'] == today_dow:
-                        await executing_scheduler_job(state, key)
+                        should_execute_today = True
+                
+                # Check monthly tasks (day of month)
+                elif 'day' in values_copy and 'month' not in values_copy:
+                    if int(values_copy['day']) == now.day:
+                        should_execute_today = True
+                
+                # Check yearly tasks (specific day and month)
+                elif 'day' in values_copy and 'month' in values_copy:
+                    if int(values_copy['day']) == now.day and int(values_copy['month']) == now.month:
+                        should_execute_today = True
+                
+                # Check one-time tasks scheduled for today
+                elif 'run_date' in values_copy:
+                    run_date = values_copy['run_date']
+                    if isinstance(run_date, datetime):
+                        if run_date.date() == now.date():
+                            should_execute_today = True
+                
+                elif 'date' in values_copy:
+                    task_date = values_copy['date']
+                    if isinstance(task_date, datetime):
+                        if task_date.date() == now.date():
+                            should_execute_today = True
+                
+                if should_execute_today:
+                    await executing_scheduler_job(state, key)
 
         if len(data['scheduler_arguments']) == 0:
             del data['scheduler_arguments']
@@ -413,12 +444,41 @@ async def scheduler_list(message_or_call, state, out_message, userdata, **kwargs
         values_copy['id'] = unique_id
         scheduler.add_job(executing_scheduler_job, **values_copy)
 
-    # 3) Если целевой день недели — сегодня, исполняем сразу один раз
+    # 3) Check if task should run today and execute immediately
+    now = datetime.now(TARGET_TZ)
+    should_execute_today = False
+    
+    # Check weekly tasks (day_of_week)
     if 'day_of_week' in values_copy:
-        now = datetime.now(TARGET_TZ)
         today_dow = now.strftime('%a').lower()[:3]  # 'mon'..'sun'
         if values_copy['day_of_week'] == today_dow:
-            await executing_scheduler_job(state, out_message)
+            should_execute_today = True
+    
+    # Check monthly tasks (day of month)
+    elif 'day' in values_copy and 'month' not in values_copy:
+        if int(values_copy['day']) == now.day:
+            should_execute_today = True
+    
+    # Check yearly tasks (specific day and month)
+    elif 'day' in values_copy and 'month' in values_copy:
+        if int(values_copy['day']) == now.day and int(values_copy['month']) == now.month:
+            should_execute_today = True
+    
+    # Check one-time tasks scheduled for today
+    elif 'run_date' in values_copy:
+        run_date = values_copy['run_date']
+        if isinstance(run_date, datetime):
+            if run_date.date() == now.date():
+                should_execute_today = True
+    
+    elif 'date' in values_copy:
+        task_date = values_copy['date']
+        if isinstance(task_date, datetime):
+            if task_date.date() == now.date():
+                should_execute_today = True
+    
+    if should_execute_today:
+        await executing_scheduler_job(state, out_message)
 
 
 
