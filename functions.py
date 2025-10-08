@@ -86,7 +86,10 @@ async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_
     path = str(message.from_user.id) + '_Diary.xlsx'
     try:
         data = pd.read_excel(path)
-    except:
+    except FileNotFoundError:
+        data = pd.DataFrame(columns=['Дата', 'Дела за день', 'Шаги', 'Sleep quality', 'О дне', 'My rate'])
+    except Exception as e:
+        logger.error(f"Error reading diary file {path}: {e}")
         data = pd.DataFrame(columns=['Дата', 'Дела за день', 'Шаги', 'Sleep quality', 'О дне', 'My rate'])
 
     last_row = data.index.max() + 1
@@ -133,7 +136,9 @@ def counter_negative(column, current_word, count=0):
             for word in split_words:
                 if word == current_word:
                     return count
-        except: pass
+        except (AttributeError, TypeError):
+            # words might be NaN or not a string - skip it
+            pass
         count += 1
     return count
 
@@ -188,6 +193,9 @@ async def scheduler_in(data, state, message):
                     values_copy['date'] = datetime.fromisoformat(values['date'])
                 except Exception:
                     values_copy['date'] = datetime.strptime(values['date'], '%Y-%m-%d')
+                # Ensure timezone is set for date field
+                if values_copy['date'].tzinfo is None:
+                    values_copy['date'] = values_copy['date'].replace(tzinfo=TARGET_TZ)
             elif 'run_date' in values_copy:
                 try:
                     values_copy['run_date'] = datetime.fromisoformat(values['run_date'])
@@ -361,16 +369,39 @@ async def tasks_pool_function(message, state: FSMContext):
     today_tasks_chosen = user_data.get('today_tasks_chosen', [])
     today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
     if 'закат ☀️' not in today_tasks.values():
+        # Merge daily_tasks into today_tasks (daily_tasks should always be included)
+        # Only copy if today_tasks is empty OR if we need to add daily_tasks that aren't already there
         if not today_tasks:
             today_tasks = daily_tasks.copy()
+        else:
+            # Add daily_tasks that are not already in today_tasks
+            for time_key, task in daily_tasks.items():
+                if time_key not in today_tasks:
+                    today_tasks[time_key] = task
+        
         if not today_tasks_not_time:
             daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
             today_tasks_not_time = daily_tasks_not_time.copy()
+        else:
+            # Add daily_tasks_not_time that are not already in today_tasks_not_time
+            daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
+            for task in daily_tasks_not_time:
+                if task not in today_tasks_not_time:
+                    today_tasks_not_time.append(task)
 
         if not sunrise or sunrise != now.strftime("%Y-%m-%d"):
-            sunrise = await get_sunset_minus_30()
-            today_tasks[sunrise.strftime("%H:%M")] = 'закат ☀️'
-            await state.update_data(today_tasks=today_tasks, sunrise=sunrise.strftime("%Y-%m-%d"), today_tasks_not_time=today_tasks_not_time)
+            try:
+                sunrise = await get_sunset_minus_30()
+                if sunrise:
+                    today_tasks[sunrise.strftime("%H:%M")] = 'закат ☀️'
+                    await state.update_data(today_tasks=today_tasks, sunrise=sunrise.strftime("%Y-%m-%d"), today_tasks_not_time=today_tasks_not_time)
+                else:
+                    # Could not get sunset time, skip adding sunset task
+                    logger.warning("Could not fetch sunset time, skipping sunset task")
+                    await state.update_data(today_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time)
+            except Exception as e:
+                logger.error(f"Error getting sunset time: {e}")
+                await state.update_data(today_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time)
         else:
             await state.update_data(today_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time)
     # Build the keyboard with the scheduled tasks and the available pool
@@ -423,6 +454,9 @@ async def scheduler_list(message_or_call, state, out_message, userdata, **kwargs
                 values_copy['date'] = datetime.strptime(values_copy['date'], '%Y-%m-%d')
             except Exception:
                 pass
+        # Ensure timezone is set for date field
+        if isinstance(values_copy['date'], datetime) and values_copy['date'].tzinfo is None:
+            values_copy['date'] = values_copy['date'].replace(tzinfo=TARGET_TZ)
     if 'run_date' in values_copy:
         rd = values_copy['run_date']
         if isinstance(rd, str):
@@ -558,8 +592,10 @@ async def executing_scheduler_job(state, out_message):
         await state.update_data(today_tasks=today_tasks)
     else:
         today_tasks_not_time = user_states_data.get('today_tasks_not_time', [])
-        today_tasks_not_time.append(text_normalized)
-        await state.update_data(today_tasks_not_time=today_tasks_not_time)
+        # Avoid duplicates - only add if not already present
+        if text_normalized not in today_tasks_not_time:
+            today_tasks_not_time.append(text_normalized)
+            await state.update_data(today_tasks_not_time=today_tasks_not_time)
     # Предполагаем, что edit_database требует user_id, как в предыдущей рекомендации.
 
     # 4. Если это было разовое напоминание (trigger='date'), удаляем его из scheduler_arguments

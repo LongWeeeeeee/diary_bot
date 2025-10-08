@@ -49,9 +49,9 @@ async def download_diary(message: Message, state: FSMContext):
             return message
         else:
             await message.answer('Дневник еще не создан. Заполните его сначала!')
-    except:
+    except Exception as e:
+        logging.error(f"Error sending diary file {file_path}: {e}")
         await message.answer('Ошибка при отправке файла. Попробуйте позже.')
-        # Optionally log the error for debugging
 
 
 
@@ -114,6 +114,10 @@ async def new_today_tasks(message: Message, state: FSMContext = None) -> None:
         if len(split_data) == 2:
             hours = int(split_data[0])
             minutes = int(split_data[1])
+            # Validate time range
+            if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+                await message.answer('Часы должны быть 0-23, минуты 0-59.')
+                return
         else:
             raise TypeError
 
@@ -126,7 +130,7 @@ async def new_today_tasks(message: Message, state: FSMContext = None) -> None:
         await state.update_data(today_tasks=today_tasks)
         await message.answer('Отлично! Дело добавлено в ваше расписание')
         await tasks_pool_function(message=message, state=state)
-    except TypeError:
+    except (TypeError, ValueError):
         await message.answer('Введите правильное время в формате часы:минуты')
         return
 
@@ -162,7 +166,7 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
                 daily_tasks_not_time_chosen.remove(name)
             if name in daily_tasks.values():
                 for key in daily_tasks.keys():
-                    if today_tasks[key] == name:
+                    if daily_tasks[key] == name:
                         if key in daily_chosen_tasks:
                             daily_chosen_tasks.remove(key)
                         del today_tasks_copy[key]
@@ -171,10 +175,15 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
         # Обновляем данные в состоянии и в БД
         keyboard = keyboard_builder(tasks_list=tasks_pool, add_dell=True,
                                     chosen=edit_tasks_pool_chosen)
+        # Get daily_tasks_not_time to save it properly
+        daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
+        # Remove deleted tasks from daily_tasks_not_time as well
+        daily_tasks_not_time = [task for task in daily_tasks_not_time if task in tasks_pool]
+        
         await state.update_data(tasks_pool=tasks_pool, daily_tasks=daily_tasks_copy, daily_chosen_tasks=daily_chosen_tasks,
                                 today_tasks=today_tasks_copy, edit_tasks_pool_chosen=[], today_tasks_not_time=today_tasks_not_time,
-                                daily_tasks_not_time_chosen=daily_tasks_not_time_chosen)
-        await edit_database(tasks_pool=tasks_pool, user_id=call.from_user.id)
+                                daily_tasks_not_time_chosen=daily_tasks_not_time_chosen, daily_tasks_not_time=daily_tasks_not_time)
+        await edit_database(tasks_pool=tasks_pool, daily_tasks=daily_tasks_copy, daily_tasks_not_time=daily_tasks_not_time, user_id=call.from_user.id)
         await call.message.edit_reply_markup(reply_markup=keyboard)
     elif call.data == 'Добавить':
         await call.message.answer('Введите список дел который хотите добавить через запятую')
@@ -466,8 +475,9 @@ async def personal_rate_1(call, state, flag=False) -> None:
     if previous_diary:
         try:
             await bot.delete_message(message.chat.id, previous_diary)
-        except:
-            pass
+        except Exception as e:
+            # Message might be already deleted or not exist - this is ok
+            logging.debug(f"Could not delete previous diary message: {e}")
     await state.update_data(today_tasks_chosen=[], today_tasks_not_time_chosen=[], one_time_chosen_tasks=[], session_accrued_tasks=[],
                             today_tasks={}, today_tasks_not_time=[], sunrise=None)
     await start(message=message, state=state)
@@ -947,7 +957,7 @@ async def change_one_time_tasks_2(call, state) -> None:
         # Создаем новый список, исключая выбранные для удаления задачи.
         # Это более надежно, чем .remove() в цикле.
         updated_tasks = [task for task in one_time_tasks if task not in one_time_chosen_tasks]
-        for task in one_time_tasks:
+        for task in one_time_chosen_tasks:
             await call.message.answer(f'Вы удалили "{task}"')
         # Обновляем базу данных и состояние FSM
         await edit_database(one_time_tasks=updated_tasks, user_id=call.from_user.id)

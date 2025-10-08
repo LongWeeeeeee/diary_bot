@@ -38,10 +38,14 @@ async def edit_database(user_id, **kwargs):
         for name, value_to_dump in kwargs.items():
             if name not in ALLOWED_COLUMNS or name == "user_id":
                 continue
+            # Safe to use f-string here because name is validated against ALLOWED_COLUMNS whitelist
+            # but using string formatting with column name is still needed as it can't be a parameter
             value = json.dumps(value_to_dump, ensure_ascii=False)
             cur.execute(f"UPDATE profile SET {name} = ? WHERE user_id = ?", (value, user_id))
         db.commit()
-    except Exception:
+    except Exception as e:
         db.rollback()
+        import logging
+        logging.error(f"Database error in edit_database for user {user_id}: {e}")
         raise
 
