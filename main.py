@@ -159,7 +159,7 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
                     if today_tasks[key] == name:
                         if key in daily_chosen_tasks:
                             daily_chosen_tasks.remove(key)
-                        del daily_tasks_copy[key]
+                        del today_tasks_copy[key]
             if name in today_tasks_not_time:
                 today_tasks_not_time.remove(name)
             if name in daily_tasks_not_time_chosen:
@@ -169,7 +169,7 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
                     if daily_tasks[key] == name:
                         if key in daily_chosen_tasks:
                             daily_chosen_tasks.remove(key)
-                        del today_tasks_copy[key]
+                        del daily_tasks_copy[key]
             await call.message.answer(f'Вы удалили "{name}"')
 
         # Обновляем данные в состоянии и в БД
@@ -280,7 +280,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         keyboard = keyboard_builder(
             tasks_dict=today_tasks,
             tasks_list=today_tasks_not_time,
-            chosen=today_tasks_chosen + today_tasks_not_time,  # Choices are now cleared
+            chosen=[],  # Choices are now cleared
             grid=1,
             add_dell=True,
             add_save=True,
