@@ -70,12 +70,24 @@ async def download_diary(message: Message, state: FSMContext):
         return
     file_path = f'{message.from_user.id}_Diary.xlsx'
     try:
+        if not os.path.exists(file_path):
+            data_for_excel = {
+                'activities': user_data.get('activities', []),
+                'sleep_quality': user_data.get('sleep_quality', '-'),
+                'personal_rate': user_data.get('personal_rate', '-'),
+                'my_steps': user_data.get('my_steps', '-'),
+                'tasks_pool': user_data.get('tasks_pool', []),
+                'user_message': user_data.get('user_message', '-'),
+                'excel_chosen_tasks': user_data.get('excel_chosen_tasks', []),
+                'personal_records': user_data.get('personal_records', {}),
+            }
+            await add_day_to_excel(date=dt.now(), message=message, today=True, **data_for_excel)
         if os.path.exists(file_path):
-            message = await message.answer_document(
+            sent = await message.answer_document(
                 document=FSInputFile(file_path),
                 disable_content_type_detection=True
             )
-            return message
+            return sent
         else:
             await message.answer('Дневник еще не создан. Заполните его сначала!')
     except Exception as e:
@@ -325,7 +337,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         daily_not_time_snapshot = list(today_tasks_not_time)
         await state.update_data(daily_tasks=daily_snapshot, daily_tasks_not_time=daily_not_time_snapshot)
         await edit_database(daily_tasks=daily_snapshot, daily_tasks_not_time=daily_not_time_snapshot, user_id=call.from_user.id)
-        await call.message.answer('Расписание на день сохранено!', show_alert=True)
+        await call.answer('Расписание на день сохранено!', show_alert=True)
 
     elif data == 'Удалить':
         if len(today_tasks_chosen)==0 and len(today_tasks_not_time_chosen)==0:
@@ -708,7 +720,12 @@ async def notifications_proceed(call, state):
     await call.answer()
     data = int(call.data)
     user_data = await state.get_data()
-    message = user_data.get('message', None)
+    message_ctx = user_data.get('message_ctx', {})
+    message_proxy = MessageProxy(
+        chat_id=message_ctx.get('chat_id', call.message.chat.id),
+        from_user=call.from_user,
+        bot=bot
+    )
     notifications_data = user_data.get('notifications_data', {})
     if notifications_data.get('hours', ''):
         hours = int(notifications_data['hours'])
@@ -744,7 +761,7 @@ async def notifications_proceed(call, state):
                 trigger='cron',
                 hour=hours,
                 minute=minutes,
-                args=(message, state)
+                args=(message_proxy, state)
                 # Replace with user IDs and message
             )
             await state.update_data(job_id=job_id.id)
@@ -758,7 +775,7 @@ async def notifications_proceed(call, state):
             message_id=call.message.message_id,
             reply_markup=date_builder.as_markup())
     elif data == 1:
-        await message.answer('Введите время ежедневных уведомлений заполнить дневник\nв формете часы:минуты')
+        await call.message.answer('Введите время ежедневных уведомлений заполнить дневник\nв формете часы:минуты')
         await state.set_state(ClientState.notification_set_date)
 
 
@@ -857,13 +874,15 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
                 unique_id = generate_unique_id_from_args(values_copy)
                 if any(job.id == unique_id for job in scheduler.get_jobs()):
                     scheduler.remove_job(job_id=unique_id)
-            for key in scheduler_arguments.keys():
+
+            # удаляем расписание из словаря, не изменяя его во время итерации
+            for key in list(scheduler_arguments.keys()):
                 if key.split('Я напомню вам : ')[1].replace('"', '') == itr:
                     del scheduler_arguments[key]
                     break
 
         if len(scheduler_arguments) == 0:
-            del user_data['scheduler_arguments']
+            user_data.pop('scheduler_arguments', None)
             user_data.pop('date_jobs_keys', None)
             user_data.pop('date_jobs_display', None)
             new_ot_builder = InlineKeyboardBuilder()
@@ -877,6 +896,7 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
                 if 'message is not modified' not in str(exc).lower():
                     raise
             await state.set_data(user_data)
+            await edit_database(scheduler_arguments={}, user_id=call.from_user.id)
 
 
         else:
@@ -1088,9 +1108,10 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
             await scheduler_list(message, state, out_message, user_data, trigger="date",
                                  run_date=scheduled_dt_aware.isoformat(),
                                  args=new_date_jobs)
-
         except Exception as e:
-             await message.answer("Не удалось запланировать напоминание.")
+            logging.error("Failed to schedule one-time reminder", exc_info=e)
+            await message.answer("Не удалось запланировать напоминание.")
+            return
 
         await message.answer(f'Отлично! Напомню про "{new_date_jobs}" {scheduled_dt_aware.strftime("%d.%m.%Y")}')
         await start(message=message, state=state) # Возврат в начальное состояние
