@@ -337,7 +337,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         daily_not_time_snapshot = list(today_tasks_not_time)
         await state.update_data(daily_tasks=daily_snapshot, daily_tasks_not_time=daily_not_time_snapshot)
         await edit_database(daily_tasks=daily_snapshot, daily_tasks_not_time=daily_not_time_snapshot, user_id=call.from_user.id)
-        await call.answer('Расписание на день сохранено!', show_alert=True)
+        await call.message.answer('Расписание на день сохранено!')
 
     elif data == 'Удалить':
         if len(today_tasks_chosen)==0 and len(today_tasks_not_time_chosen)==0:
