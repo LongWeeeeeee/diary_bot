@@ -410,6 +410,13 @@ async def tasks_pool_function(message, state: FSMContext):
 
     # Добавляем scheduled задачи на сегодня
     scheduler_arguments = user_data.get('scheduler_arguments', {})
+    if not scheduler_arguments:
+        # Загружаем из БД если нет в state
+        profile = await ensure_profile()
+        if profile:
+            scheduler_arguments = json.loads(profile[3]) if profile[3] else {}
+            state_updates['scheduler_arguments'] = scheduler_arguments
+    
     for key, values in scheduler_arguments.items():
         if should_task_run_today(values, now):
             # Парсим название задачи из ключа
@@ -418,7 +425,6 @@ async def tasks_pool_function(message, state: FSMContext):
                 tmp = task_text.split('-')
                 if len(tmp) == 2:
                     job_timing = tmp[1].split(' ')[0]
-                    job_name = tmp[0]
                     if job_timing not in today_tasks:
                         today_tasks[job_timing] = task_text
                 else:

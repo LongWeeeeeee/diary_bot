@@ -39,6 +39,13 @@ async def go_to_main_menu(message: Message, state: FSMContext) -> None:
     await start(message=message, state=state)
 
 
+@router.message(lambda message: message.text and message.text == '/reset')
+async def reset_state(message: Message, state: FSMContext) -> None:
+    """Сброс состояния пользователя (для отладки)."""
+    await state.clear()
+    await message.answer('Состояние сброшено. Напишите что-нибудь для начала.')
+
+
 @router.message(lambda message: message.text)
 async def handle_message(message: Message, state: FSMContext):
     """Fallback handler для любых текстовых сообщений."""
