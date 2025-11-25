@@ -472,3 +472,4 @@ async def change_one_time_tasks_3(message: Message, state: FSMContext) -> None:
     await replace_one_time_tasks(user_id, one_time_tasks)
     await state.update_data(one_time_tasks=one_time_tasks, one_time_chosen_tasks=[])
     await message.answer('Ваш список разовых дел обновлен')
+    await state.set_state(ClientState.one_time_tasks_2)
