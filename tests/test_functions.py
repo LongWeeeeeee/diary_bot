@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from functions import (
     normalized, parse_time_key, counter_positive, counter_negative,
-    generate_keyboard, keyboard_builder
+    generate_keyboard, keyboard_builder, _is_scheduled_task
 )
 
 
@@ -122,3 +122,24 @@ class TestKeyboardBuilder:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+class TestIsScheduledTask:
+    """Тесты для _is_scheduled_task."""
+    
+    def test_regular_task(self):
+        assert _is_scheduled_task("зарядка") is False
+        assert _is_scheduled_task("завтрак") is False
+    
+    def test_scheduled_with_pipe(self):
+        assert _is_scheduled_task("подтягивания | брусья каждый четверг") is True
+        assert _is_scheduled_task("задача | что-то") is True
+    
+    def test_scheduled_with_kazhdiy(self):
+        assert _is_scheduled_task("дело каждый день") is True
+        assert _is_scheduled_task("дело каждую пятницу") is True
+        assert _is_scheduled_task("дело каждое воскресенье") is True
+    
+    def test_empty_and_none(self):
+        assert _is_scheduled_task("") is False
+        assert _is_scheduled_task(None) is False

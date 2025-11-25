@@ -32,6 +32,17 @@ ssl_ctx = ssl.create_default_context(cafile=certifi.where())
 logger = logging.getLogger(__name__)
 
 
+def _is_scheduled_task(task_name: str) -> bool:
+    """Проверяет, является ли задача scheduled (добавленной из планировщика)."""
+    if not task_name:
+        return False
+    task_lower = task_name.lower()
+    return ('|' in task_name or 
+            'каждый ' in task_lower or 
+            'каждую ' in task_lower or 
+            'каждое ' in task_lower)
+
+
 
 
 async def add_day_to_excel(
@@ -360,13 +371,16 @@ async def tasks_pool_function(message, state: FSMContext):
         profile = await ensure_profile()
         if profile:
             daily_tasks_not_time = json.loads(profile[9])
+            # Фильтруем scheduled задачи из БД (могли попасть по ошибке)
+            daily_tasks_not_time = [t for t in daily_tasks_not_time if not _is_scheduled_task(t)]
             state_updates['daily_tasks_not_time'] = daily_tasks_not_time
     
     # Если новый день - сбрасываем today_tasks до daily_tasks
     if is_new_day:
         logger.info(f"New day detected ({last_tasks_date} -> {today_str}), resetting today_tasks")
-        today_tasks = daily_tasks.copy()
-        today_tasks_not_time = daily_tasks_not_time.copy()
+        # Фильтруем scheduled задачи
+        today_tasks = {k: v for k, v in daily_tasks.items() if not _is_scheduled_task(v)}
+        today_tasks_not_time = [t for t in daily_tasks_not_time if not _is_scheduled_task(t)]
         state_updates['today_tasks_date'] = today_str
         state_updates['today_tasks_chosen'] = []
         state_updates['today_tasks_not_time_chosen'] = []

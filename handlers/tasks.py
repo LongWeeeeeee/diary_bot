@@ -8,7 +8,7 @@ from aiogram.types import Message
 from config import bot, ClientState
 from functions import (
     generate_keyboard, keyboard_builder, tasks_pool_function, 
-    start, normalized
+    start, normalized, _is_scheduled_task
 )
 from sqlite import (
     get_tasks_pool, replace_tasks_pool, get_one_time_tasks, 
@@ -201,10 +201,15 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
 
     elif data == 'Сохранить':
         for key, value in today_tasks.copy().items():
-            if value not in tasks_pool:
+            # Не сохраняем задачи из scheduler
+            if value not in tasks_pool or _is_scheduled_task(value):
                 del today_tasks[key]
         daily_snapshot = today_tasks.copy()
-        daily_not_time_snapshot = list(today_tasks_not_time)
+        # Фильтруем scheduled задачи из списка без времени
+        daily_not_time_snapshot = [
+            task for task in today_tasks_not_time 
+            if not _is_scheduled_task(task)
+        ]
         await state.update_data(daily_tasks=daily_snapshot, daily_tasks_not_time=daily_not_time_snapshot)
         await edit_database(
             daily_tasks=daily_snapshot, 
