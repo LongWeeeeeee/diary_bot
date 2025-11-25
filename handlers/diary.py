@@ -235,7 +235,8 @@ async def personal_rate_1(call, state, flag=False) -> None:
     await state.update_data(
         today_tasks_chosen=[], today_tasks_not_time_chosen=[], 
         one_time_chosen_tasks=[], session_accrued_tasks=[],
-        today_tasks={}, today_tasks_not_time=[], sunrise=None
+        today_tasks={}, today_tasks_not_time=[], sunrise=None,
+        today_tasks_date=None  # Сбрасываем дату, чтобы при следующем открытии загрузились daily_tasks
     )
     
     # Проверяем scheduled tasks на сегодня

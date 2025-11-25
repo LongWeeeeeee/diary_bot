@@ -339,8 +339,13 @@ async def tasks_pool_function(message, state: FSMContext):
         await state.set_state(ClientState.add_tasks_pool)
         return
     
-    sunrise = user_data.get('sunrise', None)
     now = datetime.now(ZoneInfo("Europe/Moscow"))
+    today_str = now.strftime("%Y-%m-%d")
+    
+    # Проверяем, изменился ли день с последнего открытия расписания
+    last_tasks_date = user_data.get('today_tasks_date', None)
+    is_new_day = last_tasks_date != today_str
+    
     today_tasks_not_time = user_data.get('today_tasks_not_time', [])
     today_tasks = user_data.get('today_tasks', {})
     daily_tasks = user_data.get('daily_tasks', {})
@@ -349,30 +354,43 @@ async def tasks_pool_function(message, state: FSMContext):
         if profile:
             daily_tasks = json.loads(profile[8])
             state_updates['daily_tasks'] = daily_tasks
-    today_tasks_chosen = user_data.get('today_tasks_chosen', [])
-    today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
-
-    # всегда восстанавливаем расписание из daily_*, если оно отсутствует (или очищено после дневника)
-    if not today_tasks:
-        today_tasks = daily_tasks.copy()
-    else:
-        for time_key, task in daily_tasks.items():
-            today_tasks.setdefault(time_key, task)
-
+    
     daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
     if not daily_tasks_not_time:
         profile = await ensure_profile()
         if profile:
             daily_tasks_not_time = json.loads(profile[9])
             state_updates['daily_tasks_not_time'] = daily_tasks_not_time
-    if not today_tasks_not_time:
+    
+    # Если новый день - сбрасываем today_tasks до daily_tasks
+    if is_new_day:
+        logger.info(f"New day detected ({last_tasks_date} -> {today_str}), resetting today_tasks")
+        today_tasks = daily_tasks.copy()
         today_tasks_not_time = daily_tasks_not_time.copy()
+        state_updates['today_tasks_date'] = today_str
+        state_updates['today_tasks_chosen'] = []
+        state_updates['today_tasks_not_time_chosen'] = []
     else:
-        for task in daily_tasks_not_time:
-            if task not in today_tasks_not_time:
-                today_tasks_not_time.append(task)
+        # Восстанавливаем расписание из daily_*, если оно отсутствует
+        if not today_tasks:
+            today_tasks = daily_tasks.copy()
+        else:
+            for time_key, task in daily_tasks.items():
+                today_tasks.setdefault(time_key, task)
+        
+        if not today_tasks_not_time:
+            today_tasks_not_time = daily_tasks_not_time.copy()
+        else:
+            for task in daily_tasks_not_time:
+                if task not in today_tasks_not_time:
+                    today_tasks_not_time.append(task)
+    
+    today_tasks_chosen = user_data.get('today_tasks_chosen', [])
+    today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
 
-    sunrise_outdated = sunrise != now.strftime("%Y-%m-%d")
+    # Обновляем закат
+    sunrise = user_data.get('sunrise', None)
+    sunrise_outdated = sunrise != today_str
     if sunrise_outdated:
         # Удаляем все старые закаты перед добавлением нового
         old_sunset_keys = [k for k, v in today_tasks.items() if v == 'закат ☀️']
@@ -383,7 +401,7 @@ async def tasks_pool_function(message, state: FSMContext):
             sunset_time = await get_sunset_minus_30()
             if sunset_time:
                 today_tasks[sunset_time.strftime("%H:%M")] = 'закат ☀️'
-                state_updates['sunrise'] = sunset_time.strftime("%Y-%m-%d")
+                state_updates['sunrise'] = today_str
             else:
                 logger.warning("Could not fetch sunset time, skipping sunset task")
         except Exception as e:
