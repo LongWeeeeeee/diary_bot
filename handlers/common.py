@@ -18,10 +18,10 @@ router = Router(name="common")
 
 class MessageProxy:
     """Прокси для отправки сообщений без объекта Message."""
-    def __init__(self, chat_id: int, from_user, bot_instance):
+    def __init__(self, chat_id: int, from_user, bot):
         self.chat = SimpleNamespace(id=chat_id)
         self.from_user = from_user
-        self.bot = bot_instance
+        self.bot = bot
 
     async def answer(self, text, **kwargs):
         return await self.bot.send_message(self.chat.id, text, **kwargs)
