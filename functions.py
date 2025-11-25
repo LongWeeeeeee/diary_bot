@@ -35,18 +35,21 @@ logger = logging.getLogger(__name__)
 def _is_scheduled_task(task_name: str) -> bool:
     """Проверяет, является ли задача scheduled (добавленной из планировщика).
     
-    Scheduled задачи имеют формат: "задача | описание каждый/каждую/каждое день_недели"
-    Например: "подтягивания | брусья каждый четверг"
+    Scheduled задачи содержат слова "каждый/каждую/каждое" с днём недели.
+    Например: "брусья каждый вторник" или "подтягивания | брусья каждый четверг"
     """
     if not task_name:
         return False
     task_lower = task_name.lower()
-    # Должен содержать И разделитель "|" И слово "каждый/каждую/каждое"
-    has_pipe = '|' in task_name
-    has_schedule_word = ('каждый ' in task_lower or 
-                         'каждую ' in task_lower or 
-                         'каждое ' in task_lower)
-    return has_pipe and has_schedule_word
+    # Проверяем наличие паттерна "каждый/каждую/каждое + день недели"
+    weekdays = ['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу', 'воскресенье']
+    for prefix in ['каждый ', 'каждую ', 'каждое ']:
+        if prefix in task_lower:
+            # Проверяем что после "каждый" идёт день недели
+            for day in weekdays:
+                if f'{prefix}{day}' in task_lower:
+                    return True
+    return False
 
 
 
@@ -418,10 +421,12 @@ async def tasks_pool_function(message, state: FSMContext):
             state_updates['scheduler_arguments'] = scheduler_arguments
     
     for key, values in scheduler_arguments.items():
+        logger.debug(f"Checking scheduled task: {key}, values: {values}, today: {now.strftime('%a').lower()[:3]}")
         if should_task_run_today(values, now):
             # Парсим название задачи из ключа
             try:
-                task_text = normalized(key.split(' : ')[1]).replace('"', '').replace(' - ', '-')
+                task_text = normalize_preserve_case(key.split(' : ')[1]).replace('"', '').replace(' - ', '-')
+                logger.debug(f"Adding scheduled task for today: {task_text}")
                 tmp = task_text.split('-')
                 if len(tmp) == 2:
                     job_timing = tmp[1].split(' ')[0]
@@ -604,7 +609,7 @@ async def executing_scheduler_job(state: FSMContext, out_message: str) -> None:
     
     # Безопасно получаем название задачи из сообщения
     try:
-        text_normalized = normalized(out_message.split(' : ')[1]).replace('"', '').replace(' - ', '-')
+        text_normalized = normalize_preserve_case(out_message.split(' : ')[1]).replace('"', '').replace(' - ', '-')
     except (IndexError, AttributeError):
         logger.error(f"Error parsing job text from: {out_message}")
         return
@@ -710,6 +715,11 @@ def generate_keyboard(
 
 def normalized(text: str) -> str:
     return re.sub(r',(?=\S)', ', ', text).strip().lower().replace('ё', 'е')
+
+
+def normalize_preserve_case(text: str) -> str:
+    """Нормализует текст, сохраняя регистр букв."""
+    return re.sub(r',(?=\S)', ', ', text).strip().replace('ё', 'е')
 
 
 async def diary_out(message: Message) -> None:
