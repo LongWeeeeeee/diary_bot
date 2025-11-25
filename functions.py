@@ -213,10 +213,7 @@ async def scheduler_in(data, state, message):
                 if 'day_of_week' in values_copy and isinstance(values_copy['day_of_week'], list):
                     values_copy['day_of_week'] = values_copy['day_of_week'][0]
                 scheduler.add_job(executing_scheduler_job, **values_copy)
-                
-                # Check if task should run today and execute immediately
-                if should_task_run_today(values_copy):
-                    await executing_scheduler_job(state, key)
+                # НЕ выполняем немедленно - задачи добавятся при открытии расписания
 
         if len(data['scheduler_arguments']) == 0:
             del data['scheduler_arguments']
@@ -402,6 +399,25 @@ async def tasks_pool_function(message, state: FSMContext):
     today_tasks_chosen = user_data.get('today_tasks_chosen', [])
     today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
 
+    # Добавляем scheduled задачи на сегодня
+    scheduler_arguments = user_data.get('scheduler_arguments', {})
+    for key, values in scheduler_arguments.items():
+        if should_task_run_today(values, now):
+            # Парсим название задачи из ключа
+            try:
+                task_text = normalized(key.split(' : ')[1]).replace('"', '').replace(' - ', '-')
+                tmp = task_text.split('-')
+                if len(tmp) == 2:
+                    job_timing = tmp[1].split(' ')[0]
+                    job_name = tmp[0]
+                    if job_timing not in today_tasks:
+                        today_tasks[job_timing] = task_text
+                else:
+                    if task_text not in today_tasks_not_time:
+                        today_tasks_not_time.append(task_text)
+            except (IndexError, AttributeError):
+                logger.debug(f"Could not parse scheduled task: {key}")
+
     # Обновляем закат
     sunrise = user_data.get('sunrise', None)
     sunrise_outdated = sunrise != today_str
@@ -501,10 +517,7 @@ async def scheduler_list(
     if not any(job.id == unique_id for job in scheduler.get_jobs()):
         values_copy['id'] = unique_id
         scheduler.add_job(executing_scheduler_job, **values_copy)
-
-    # Check if task should run today and execute immediately
-    if should_task_run_today(values_copy):
-        await executing_scheduler_job(state, out_message)
+    # Задачи добавятся в расписание при открытии "Заполнить дневник"
 
 
 

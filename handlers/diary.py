@@ -9,12 +9,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile, Message
 
 from config import (
-    bot, ClientState, TARGET_TZ, has_user_data, should_task_run_today,
+    bot, ClientState, has_user_data,
     NEGATIVE_RESPONSES, MIN_DIARY_MESSAGE_LENGTH, PERSONAL_RATE_MIN, PERSONAL_RATE_MAX
 )
 from functions import (
     diary_out, add_day_to_excel, keyboard_builder, start,
-    executing_scheduler_job, tasks_pool_function
+    tasks_pool_function
 )
 from sqlite import edit_database, replace_one_time_tasks
 
@@ -238,13 +238,5 @@ async def personal_rate_1(call, state, flag=False) -> None:
         today_tasks={}, today_tasks_not_time=[], sunrise=None,
         today_tasks_date=None  # Сбрасываем дату, чтобы при следующем открытии загрузились daily_tasks
     )
-    
-    # Проверяем scheduled tasks на сегодня
-    updated_data = await state.get_data()
-    if 'scheduler_arguments' in updated_data:
-        now = dt.now(TARGET_TZ)
-        for key, values in updated_data['scheduler_arguments'].items():
-            if should_task_run_today(values, now):
-                await executing_scheduler_job(state, key)
     
     await start(message=message, state=state)
