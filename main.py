@@ -1,6 +1,8 @@
 """Основной модуль бота-дневника."""
 import asyncio
+import fcntl
 import logging
+import os
 import signal
 import sys
 
@@ -10,6 +12,35 @@ from handlers import router
 from handlers.common import on_error_handler
 
 logger = logging.getLogger(__name__)
+
+LOCK_FILE = '/tmp/diary_bot.lock'
+lock_fd = None
+
+
+def acquire_lock():
+    """Захватывает lock-файл, чтобы предотвратить запуск дубликатов."""
+    global lock_fd
+    lock_fd = open(LOCK_FILE, 'w')
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock_fd.write(str(os.getpid()))
+        lock_fd.flush()
+        return True
+    except BlockingIOError:
+        print("❌ Бот уже запущен! Завершаю...")
+        return False
+
+
+def release_lock():
+    """Освобождает lock-файл."""
+    global lock_fd
+    if lock_fd:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
+        try:
+            os.remove(LOCK_FILE)
+        except OSError:
+            pass
 
 
 async def shutdown(sig: signal.Signals = None):
@@ -98,4 +129,9 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if not acquire_lock():
+        sys.exit(1)
+    try:
+        asyncio.run(main())
+    finally:
+        release_lock()
