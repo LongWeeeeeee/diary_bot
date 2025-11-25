@@ -33,14 +33,20 @@ logger = logging.getLogger(__name__)
 
 
 def _is_scheduled_task(task_name: str) -> bool:
-    """Проверяет, является ли задача scheduled (добавленной из планировщика)."""
+    """Проверяет, является ли задача scheduled (добавленной из планировщика).
+    
+    Scheduled задачи имеют формат: "задача | описание каждый/каждую/каждое день_недели"
+    Например: "подтягивания | брусья каждый четверг"
+    """
     if not task_name:
         return False
     task_lower = task_name.lower()
-    return ('|' in task_name or 
-            'каждый ' in task_lower or 
-            'каждую ' in task_lower or 
-            'каждое ' in task_lower)
+    # Должен содержать И разделитель "|" И слово "каждый/каждую/каждое"
+    has_pipe = '|' in task_name
+    has_schedule_word = ('каждый ' in task_lower or 
+                         'каждую ' in task_lower or 
+                         'каждое ' in task_lower)
+    return has_pipe and has_schedule_word
 
 
 
@@ -375,7 +381,6 @@ async def tasks_pool_function(message, state: FSMContext):
     # Если новый день - сбрасываем today_tasks до daily_tasks
     if is_new_day:
         logger.info(f"New day detected ({last_tasks_date} -> {today_str}), resetting today_tasks")
-        # Фильтруем scheduled задачи
         today_tasks = {k: v for k, v in daily_tasks.items() if not _is_scheduled_task(v)}
         today_tasks_not_time = [t for t in daily_tasks_not_time if not _is_scheduled_task(t)]
         state_updates['today_tasks_date'] = today_str
@@ -395,6 +400,10 @@ async def tasks_pool_function(message, state: FSMContext):
             for task in daily_tasks_not_time:
                 if task not in today_tasks_not_time:
                     today_tasks_not_time.append(task)
+    
+    # ВСЕГДА фильтруем старые scheduled задачи перед добавлением актуальных
+    today_tasks = {k: v for k, v in today_tasks.items() if not _is_scheduled_task(v)}
+    today_tasks_not_time = [t for t in today_tasks_not_time if not _is_scheduled_task(t)]
     
     today_tasks_chosen = user_data.get('today_tasks_chosen', [])
     today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])

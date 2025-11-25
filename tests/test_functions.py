@@ -131,14 +131,20 @@ class TestIsScheduledTask:
         assert _is_scheduled_task("зарядка") is False
         assert _is_scheduled_task("завтрак") is False
     
-    def test_scheduled_with_pipe(self):
-        assert _is_scheduled_task("подтягивания | брусья каждый четверг") is True
-        assert _is_scheduled_task("задача | что-то") is True
+    def test_task_with_pipe_only(self):
+        # Задача с | но без "каждый" - НЕ scheduled
+        assert _is_scheduled_task("Читать/слушать книгу | воздержание") is False
+        assert _is_scheduled_task("задача | что-то") is False
     
-    def test_scheduled_with_kazhdiy(self):
-        assert _is_scheduled_task("дело каждый день") is True
-        assert _is_scheduled_task("дело каждую пятницу") is True
-        assert _is_scheduled_task("дело каждое воскресенье") is True
+    def test_task_with_kazhdiy_only(self):
+        # Задача с "каждый" но без | - НЕ scheduled
+        assert _is_scheduled_task("дело каждый день") is False
+    
+    def test_scheduled_task(self):
+        # Настоящие scheduled задачи - с | И "каждый"
+        assert _is_scheduled_task("подтягивания | брусья каждый четверг") is True
+        assert _is_scheduled_task("задача | описание каждую пятницу") is True
+        assert _is_scheduled_task("дело | тест каждое воскресенье") is True
     
     def test_empty_and_none(self):
         assert _is_scheduled_task("") is False
