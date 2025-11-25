@@ -1,92 +1,52 @@
-import re
+"""Вспомогательные функции бота-дневника."""
+import asyncio
+import hashlib
 import json
+import logging
 import os
+import re
+import ssl
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Union
+from zoneinfo import ZoneInfo
 
-from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
-import keys
-from sqlite import (create_profile, edit_database, add_daily_log, get_last_logs, get_all_logs,
-                    get_tasks_pool, get_one_time_tasks)
+import aiohttp
+import certifi
 import pandas as pd
 from aiogram import types
-import hashlib
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-import logging
-from typing import Optional
-import ssl, certifi, aiohttp, asyncio
+from aiogram.fsm.context import FSMContext
+from aiogram.types import Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+from config import (
+    bot, scheduler, ClientState, TARGET_TZ, LAT, LNG,
+    NEGATIVE_RESPONSES, WEEKDAY_TRANSLATE, remove_markup,
+    should_task_run_today
+)
+from sqlite import (
+    create_profile, edit_database, add_daily_log, get_last_logs, get_all_logs,
+    get_tasks_pool, get_one_time_tasks
+)
 
 ssl_ctx = ssl.create_default_context(cafile=certifi.where())
 logger = logging.getLogger(__name__)
-os.environ['TZ'] = 'Etc/UTC'
 
 
-scheduler = AsyncIOScheduler()
-scheduler.configure(timezone='Europe/Moscow')
-TARGET_TZ = ZoneInfo("Europe/Moscow")
-
-redis_storage = RedisStorage.from_url(os.environ.get('REDIS_URL', 'redis://localhost:6379/0'))
-
-class ClientState(StatesGroup):
-    greet = State()
-    start = State()
-    personal_rate_1 = State()
-    one_time_tasks_3=State()
-    change_tasks_pool_1 = State()
-    steps = State()
-    total_sleep = State()
-    deep_sleep = State()
-    about_day = State()
-    change_today_tasks = State()
-    change_today_tasks_1 = State()
-    add_tasks_pool = State()
-    edit_tasks_pool = State()
-    personal_rate = State()
-    settings = State()
-    download = State()
-    one_time_tasks_2 = State()
-    one_time_tasks_proceed = State()
-    date_jobs = State()
-    del_date_job = State()
-    date_jobs_1 = State()
-    date_jobs_2 = State()
-    date_jobs_3 = State()
-    date_jobs_week = State()
-    date_jobs_year = State()
-    date_jobs_once = State()
-    date_jobs_month = State()
-    collected_data = State()
-    notification_proceed = State()
-    notification_proceed_1 = State()
-    notification_set_date = State()
-    market = State()
-    new_market_product = State()
-    new_market_product_2 = State()
-    backpack = State()
-    new_today_tasks = State()
 
 
-bot = Bot(token=keys.Token)
-dp = Dispatcher(storage=redis_storage)
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-already_started = False
-remove_markup = types.ReplyKeyboardRemove()
-negative_responses = {'не', 'нет', '-', 'pass', 'пасс', 'не хочу', 'скип', 'неа', 'не-а', '0', 0}
-translate = {'понедельник': 'mon', 'вторник': 'tue', 'среду': 'wed', 'четверг': 'thu', 'пятницу': 'fri',
-             'субботу': 'sat',
-             'воскресенье': 'sun'}
-
-
-async def add_day_to_excel(date, activities: list, sleep_quality: int, personal_rate: float,
-                           my_steps: int,
-                           tasks_pool: list,
-                           user_message: str, message, excel_chosen_tasks=None, personal_records=None, today=None):
+async def add_day_to_excel(
+    date: datetime,
+    activities: List[str],
+    sleep_quality: Union[int, float, str],
+    personal_rate: Union[int, float],
+    my_steps: Union[int, float, str],
+    tasks_pool: List[str],
+    user_message: str,
+    message: Message,
+    excel_chosen_tasks: Optional[List[str]] = None,
+    personal_records: Optional[Dict[str, Any]] = None,
+    today: Optional[bool] = None
+) -> Optional[Dict[str, Any]]:
     user_id = message.from_user.id
     path = f"{user_id}_Diary.xlsx"
 
@@ -182,17 +142,7 @@ def counter_negative(column, current_word):
     return count
 
 
-def day_to_prefix(day: str) -> str:
-    day_to_prefix_dict = {
-        'воскресенье': 'каждое',
-        'субботу': 'каждую',
-        'пятницу': 'каждую',
-        'четверг': 'каждый',
-        'среду': 'каждую',
-        'вторник': 'каждый',
-        'понедельник': 'каждый'
-    }
-    return day_to_prefix_dict[day]
+# day_to_prefix удалён - используется из config.py
 
 
 
@@ -254,39 +204,7 @@ async def scheduler_in(data, state, message):
                 scheduler.add_job(executing_scheduler_job, **values_copy)
                 
                 # Check if task should run today and execute immediately
-                now = datetime.now(TARGET_TZ)
-                should_execute_today = False
-                
-                # Check weekly tasks (day_of_week)
-                if 'day_of_week' in values_copy:
-                    today_dow = now.strftime('%a').lower()[:3]  # 'mon'..'sun'
-                    if values_copy['day_of_week'] == today_dow:
-                        should_execute_today = True
-                
-                # Check monthly tasks (day of month)
-                elif 'day' in values_copy and 'month' not in values_copy:
-                    if int(values_copy['day']) == now.day:
-                        should_execute_today = True
-                
-                # Check yearly tasks (specific day and month)
-                elif 'day' in values_copy and 'month' in values_copy:
-                    if int(values_copy['day']) == now.day and int(values_copy['month']) == now.month:
-                        should_execute_today = True
-                
-                # Check one-time tasks scheduled for today
-                elif 'run_date' in values_copy:
-                    run_date = values_copy['run_date']
-                    if isinstance(run_date, datetime):
-                        if run_date.date() == now.date():
-                            should_execute_today = True
-                
-                elif 'date' in values_copy:
-                    task_date = values_copy['date']
-                    if isinstance(task_date, datetime):
-                        if task_date.date() == now.date():
-                            should_execute_today = True
-                
-                if should_execute_today:
+                if should_task_run_today(values_copy):
                     await executing_scheduler_job(state, key)
 
         if len(data['scheduler_arguments']) == 0:
@@ -295,7 +213,18 @@ async def scheduler_in(data, state, message):
             await edit_database(scheduler_arguments={}, user_id=message.from_user.id)
 
 
-def keyboard_builder(tasks_list=None, tasks_dict=None, chosen=None, add_save=None, grid=1, price_tag=False, add_dell=False, checks=False, last_button=None, add_money=False):
+def keyboard_builder(
+    tasks_list: Optional[List[str]] = None,
+    tasks_dict: Optional[Dict[str, str]] = None,
+    chosen: Optional[List[str]] = None,
+    add_save: Optional[bool] = None,
+    grid: int = 1,
+    price_tag: bool = False,
+    add_dell: bool = False,
+    checks: bool = False,
+    last_button: Optional[str] = None,
+    add_money: bool = False
+) -> types.InlineKeyboardMarkup:
     data_builder = InlineKeyboardBuilder()
     tasks_pool_builder = InlineKeyboardBuilder()
     if tasks_list is not None:
@@ -312,28 +241,16 @@ def keyboard_builder(tasks_list=None, tasks_dict=None, chosen=None, add_save=Non
             tasks_dict.items(),
             key=lambda item: parse_time_key(item[0])
         ))
+        chosen_set = chosen or []
         for time, task in today_tasks.items():
             if checks:
                 data_builder.button(text=f"{time} {task} ✔️", callback_data=f"{time}")
             elif not price_tag:
-                if time in chosen:
+                if time in chosen_set:
                     data_builder.button(text=f"{time} {task} ✅️", callback_data=f"{time}")
                 else:
                     data_builder.button(text=f"{time} {task} ✔️", callback_data=f"{time}")
 
-        # else:
-        #     product_name = job
-        #     price = inp[job]
-        #     if type(price) == dict:
-        #         for date in price:
-        #             if price[date]['used'] is False:
-        #                 price = int(price[date]['price'])
-        #                 data_builder.button(text=f"{price}💰 {product_name} ✔️", callback_data=f"{index}")
-        #     else:
-        #         if str(index) in chosen:
-        #             data_builder.button(text=f"{int(price)}💰 {product_name} ✅️", callback_data=f"{index}")
-        #         else:
-        #             data_builder.button(text=f"{int(price)}💰 {product_name} ✔️", callback_data=f"{index}")
     data_builder.adjust(grid, grid)
     d_new_builder = InlineKeyboardBuilder()
     if add_money:
@@ -378,9 +295,12 @@ def generate_unique_id_from_args(args_dict):
     return hashlib.sha256(serialized_args.encode()).hexdigest()
 
 
-async def handle_new_user(message: Message, state: FSMContext):
+async def handle_new_user(message: Message, state: FSMContext) -> None:
     info = await bot.get_me()
-    await message.answer_sticker('CAACAgIAAxkBAAIsZGVY5wgzBq6lUUSgcSYTt99JnOBbAAIIAAPANk8Tb2wmC94am2kzBA')
+    try:
+        await message.answer_sticker('CAACAgIAAxkBAAIsZGVY5wgzBq6lUUSgcSYTt99JnOBbAAIIAAPANk8Tb2wmC94am2kzBA')
+    except Exception as e:
+        logger.warning(f"Could not send sticker: {e}")
     await message.answer(
         f'''Привет, {message.from_user.full_name}! \nДобро пожаловать в {info.username}!
 Он поможет тебе вести отчет о твоих днях и делать выводы почему день был плохим или хорошим
@@ -392,8 +312,8 @@ async def handle_new_user(message: Message, state: FSMContext):
     await state.set_state(ClientState.add_tasks_pool)
 
 
-@dp.message(lambda message: message.text and message.text.lower() == 'заполнить дневник')
 async def tasks_pool_function(message, state: FSMContext):
+    """Показывает расписание на сегодня для заполнения дневника."""
     user_data = await state.get_data()
     profile_row = None
 
@@ -403,6 +323,9 @@ async def tasks_pool_function(message, state: FSMContext):
             profile_row = await create_profile(user_id=message.from_user.id)
         return profile_row
 
+    # Собираем все данные для одного update_data в конце
+    state_updates = {}
+    
     tasks_pool = user_data.get('tasks_pool', [])
     if not tasks_pool:
         profile = await ensure_profile()
@@ -410,11 +333,12 @@ async def tasks_pool_function(message, state: FSMContext):
             tasks_pool_json = json.loads(profile[1])
             tasks_pool_db = await get_tasks_pool(str(message.from_user.id))
             tasks_pool = tasks_pool_db or list(set(tasks_pool_json))
-            await state.update_data(tasks_pool=tasks_pool)
+            state_updates['tasks_pool'] = tasks_pool
     if not tasks_pool:
         await message.answer('Ваш список дел пуст! Добавьте ваши общие дела через запятую.')
         await state.set_state(ClientState.add_tasks_pool)
         return
+    
     sunrise = user_data.get('sunrise', None)
     now = datetime.now(ZoneInfo("Europe/Moscow"))
     today_tasks_not_time = user_data.get('today_tasks_not_time', [])
@@ -424,7 +348,7 @@ async def tasks_pool_function(message, state: FSMContext):
         profile = await ensure_profile()
         if profile:
             daily_tasks = json.loads(profile[8])
-            await state.update_data(daily_tasks=daily_tasks)
+            state_updates['daily_tasks'] = daily_tasks
     today_tasks_chosen = user_data.get('today_tasks_chosen', [])
     today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
 
@@ -440,7 +364,7 @@ async def tasks_pool_function(message, state: FSMContext):
         profile = await ensure_profile()
         if profile:
             daily_tasks_not_time = json.loads(profile[9])
-            await state.update_data(daily_tasks_not_time=daily_tasks_not_time)
+            state_updates['daily_tasks_not_time'] = daily_tasks_not_time
     if not today_tasks_not_time:
         today_tasks_not_time = daily_tasks_not_time.copy()
     else:
@@ -448,23 +372,27 @@ async def tasks_pool_function(message, state: FSMContext):
             if task not in today_tasks_not_time:
                 today_tasks_not_time.append(task)
 
-    need_sunset = 'закат ☀️' not in today_tasks.values()
     sunrise_outdated = sunrise != now.strftime("%Y-%m-%d")
-    if need_sunset or sunrise_outdated:
+    if sunrise_outdated:
+        # Удаляем все старые закаты перед добавлением нового
+        old_sunset_keys = [k for k, v in today_tasks.items() if v == 'закат ☀️']
+        for key in old_sunset_keys:
+            del today_tasks[key]
+        
         try:
-            sunrise = await get_sunset_minus_30()
-            if sunrise:
-                today_tasks[sunrise.strftime("%H:%M")] = 'закат ☀️'
-                sunrise_value = sunrise.strftime("%Y-%m-%d")
+            sunset_time = await get_sunset_minus_30()
+            if sunset_time:
+                today_tasks[sunset_time.strftime("%H:%M")] = 'закат ☀️'
+                state_updates['sunrise'] = sunset_time.strftime("%Y-%m-%d")
             else:
                 logger.warning("Could not fetch sunset time, skipping sunset task")
-                sunrise_value = sunrise
         except Exception as e:
             logger.error(f"Error getting sunset time: {e}")
-            sunrise_value = sunrise
-        await state.update_data(today_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time, sunrise=sunrise_value)
-    else:
-        await state.update_data(today_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time)
+    
+    # Один вызов update_data вместо нескольких
+    state_updates['today_tasks'] = today_tasks
+    state_updates['today_tasks_not_time'] = today_tasks_not_time
+    await state.update_data(**state_updates)
     # Build the keyboard with the scheduled tasks and the available pool
     keyboard = keyboard_builder(
         tasks_dict=today_tasks,
@@ -487,12 +415,15 @@ async def tasks_pool_function(message, state: FSMContext):
         )
     await state.set_state(ClientState.greet)
 
-async def scheduler_list(message_or_call, state, out_message, userdata, **kwargs):
-    # определить корректный actor_id
-    if isinstance(message_or_call, types.CallbackQuery):
-        actor_id = message_or_call.from_user.id
-    else:
-        actor_id = message_or_call.from_user.id
+async def scheduler_list(
+    message_or_call: Union[Message, types.CallbackQuery],
+    state: FSMContext,
+    out_message: str,
+    userdata: Dict[str, Any],
+    **kwargs
+) -> None:
+    """Добавляет задачу в планировщик."""
+    actor_id = message_or_call.from_user.id
 
     data = await state.get_data()
     scheduler_arguments = data.get('scheduler_arguments', {})
@@ -539,45 +470,13 @@ async def scheduler_list(message_or_call, state, out_message, userdata, **kwargs
         values_copy['id'] = unique_id
         scheduler.add_job(executing_scheduler_job, **values_copy)
 
-    # 3) Check if task should run today and execute immediately
-    now = datetime.now(TARGET_TZ)
-    should_execute_today = False
-    
-    # Check weekly tasks (day_of_week)
-    if 'day_of_week' in values_copy:
-        today_dow = now.strftime('%a').lower()[:3]  # 'mon'..'sun'
-        if values_copy['day_of_week'] == today_dow:
-            should_execute_today = True
-    
-    # Check monthly tasks (day of month)
-    elif 'day' in values_copy and 'month' not in values_copy:
-        if int(values_copy['day']) == now.day:
-            should_execute_today = True
-    
-    # Check yearly tasks (specific day and month)
-    elif 'day' in values_copy and 'month' in values_copy:
-        if int(values_copy['day']) == now.day and int(values_copy['month']) == now.month:
-            should_execute_today = True
-    
-    # Check one-time tasks scheduled for today
-    elif 'run_date' in values_copy:
-        run_date = values_copy['run_date']
-        if isinstance(run_date, datetime):
-            if run_date.date() == now.date():
-                should_execute_today = True
-    
-    elif 'date' in values_copy:
-        task_date = values_copy['date']
-        if isinstance(task_date, datetime):
-            if task_date.date() == now.date():
-                should_execute_today = True
-    
-    if should_execute_today:
+    # Check if task should run today and execute immediately
+    if should_task_run_today(values_copy):
         await executing_scheduler_job(state, out_message)
 
 
 
-async def start(state, message) -> None:
+async def start(state: FSMContext, message: Message) -> None:
     user_data = await state.get_data()
     data = user_data.copy()
     answer = await create_profile(user_id=message.from_user.id)
@@ -604,7 +503,10 @@ async def start(state, message) -> None:
             data['personal_records'] = personal_records
         data['previous_diary'] = previous_diary
         data['notifications_data'] = notifications_data
-        if notifications_data.get('chosen_notifications') == ['Включено'] and not user_data.get('job_id'):
+        if (notifications_data.get('chosen_notifications') == ['Включено'] 
+            and not user_data.get('job_id')
+            and 'hours' in notifications_data 
+            and 'minutes' in notifications_data):
             hours = notifications_data['hours']
             minutes = notifications_data['minutes']
             job_id = scheduler.add_job(
@@ -637,14 +539,14 @@ async def start(state, message) -> None:
         await handle_new_user(message, state)
 
 
-async def executing_scheduler_job(state, out_message):
+async def executing_scheduler_job(state: FSMContext, out_message: str) -> None:
     # функция, которая срабатывает, когда срабатывает scheduler
     
     # Безопасно получаем название задачи из сообщения
     try:
         text_normalized = normalized(out_message.split(' : ')[1]).replace('"', '').replace(' - ', '-')
     except (IndexError, AttributeError):
-        print(f"Error parsing job text from: {out_message}")
+        logger.error(f"Error parsing job text from: {out_message}")
         return
 
     tmp = text_normalized.split('-')
@@ -679,7 +581,7 @@ async def executing_scheduler_job(state, out_message):
         if user_id:
             await edit_database(scheduler_arguments=scheduler_arguments, user_id=user_id)
 
-    print(f"Successfully added scheduled task '{text_normalized}' to daily_tasks for user {user_id}")
+    logger.info(f"Successfully added scheduled task '{text_normalized}' to daily_tasks for user {user_id}")
 
 
 
@@ -716,14 +618,21 @@ async def counter_max_days(activity_history, tasks_pool, message, activities, pe
                       f'Может стоит дать им еще один шанс?'
         if output:
             send_message = await message.answer(output)
-            await message.bot.pin_chat_message(message.chat.id, send_message.message_id)
+            try:
+                await message.bot.pin_chat_message(message.chat.id, send_message.message_id)
+            except Exception as e:
+                logger.debug(f"Could not pin message: {e}")
             return personal_records
     else:
         await message.answer('Поздравляю! дневник заполнен')
 
 
 
-def generate_keyboard(buttons: list, last_button=None, first_button=None):
+def generate_keyboard(
+    buttons: List[str],
+    last_button: Optional[str] = None,
+    first_button: Optional[str] = None
+) -> types.ReplyKeyboardMarkup:
     #✅️✔️
 
     if last_button is not None:
@@ -739,11 +648,11 @@ def generate_keyboard(buttons: list, last_button=None, first_button=None):
     return keyboard
 
 
-def normalized(text):
+def normalized(text: str) -> str:
     return re.sub(r',(?=\S)', ', ', text).strip().lower().replace('ё', 'е')
 
 
-async def diary_out(message):
+async def diary_out(message: Message) -> None:
     logs = await get_last_logs(message.from_user.id)
     if not logs:
         await message.answer("Дневник еще не создан. Сначала заполните его!")
@@ -779,11 +688,13 @@ async def diary_out(message):
 
 
 
-LAT = 55.72545
-LNG = 52.41122
 MSK = ZoneInfo("Europe/Moscow")
 PRIMARY_API = "https://api.sunrise-sunset.org/json"
 FALLBACK_API = "https://api.sunrisesunset.io/json"
+
+# Кэш для API заката: {date_str: (sunset_datetime, fetch_time)}
+_sunset_cache: Dict[str, tuple] = {}
+_CACHE_TTL_HOURS = 12
 
 # Try to use dateutil.parser if available for robust parsing
 try:
@@ -874,8 +785,17 @@ async def get_sunset_minus_30(
 ) -> datetime:
     """
     Async: Return timezone-aware datetime (Europe/Moscow) of sunset - 30 minutes.
+    Uses caching to avoid excessive API calls.
     Raises RuntimeError only if all attempts fail.
     """
+    # Проверяем кэш
+    cache_key = date or datetime.now(MSK).date().isoformat()
+    if cache_key in _sunset_cache:
+        cached_result, fetch_time = _sunset_cache[cache_key]
+        if datetime.now(MSK) - fetch_time < timedelta(hours=_CACHE_TTL_HOURS):
+            logger.debug(f"Using cached sunset for {cache_key}")
+            return cached_result
+    
     own_session = False
     if session is None:
         session = aiohttp.ClientSession()
@@ -895,7 +815,9 @@ async def get_sunset_minus_30(
                 dt = _try_parse_sunset_string(sunset_raw, assume_msk_when_naive=False, date_for_time=date)
                 if dt:
                     dt = dt.astimezone(MSK)
-                    return dt - timedelta(minutes=30)
+                    result = dt - timedelta(minutes=30)
+                    _sunset_cache[cache_key] = (result, datetime.now(MSK))
+                    return result
         except Exception as e:
             logger.debug("Primary API failed: %s", e)
 
@@ -918,7 +840,9 @@ async def get_sunset_minus_30(
                 if dt:
                     # ensure MSK tz
                     dt = dt.astimezone(MSK)
-                    return dt - timedelta(minutes=30)
+                    result = dt - timedelta(minutes=30)
+                    _sunset_cache[cache_key] = (result, datetime.now(MSK))
+                    return result
         except Exception as e:
             logger.debug("Fallback API failed: %s", e)
 

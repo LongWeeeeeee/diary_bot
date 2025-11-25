@@ -1,11 +1,27 @@
-# Игнорировать папку виртуального окружения
+# Виртуальное окружение
 venv/
-.Ds_Store
+.venv/
+
+# Системные файлы
+.DS_Store
+
+# Данные пользователей
 *.xlsx
-.gitignore
-# Игнорировать файлы конфигурации IDE (например, PyCharm)
-.idea/
-__pycache__/
 *.db
+
+# IDE
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Секреты
 keys.py
+.env
+.env.*
+
+# Прочее
 *.js
