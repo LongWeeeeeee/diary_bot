@@ -169,7 +169,10 @@ async def notifications_proceed(call, state):
         else:
             job_id = user_data.get('job_id', '')
             if job_id:
-                scheduler.remove_job(job_id=job_id)
+                try:
+                    scheduler.remove_job(job_id=job_id)
+                except Exception:
+                    pass
                 await state.update_data(job_id='')
         
         await bot.edit_message_reply_markup(

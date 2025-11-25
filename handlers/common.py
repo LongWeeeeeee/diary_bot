@@ -59,24 +59,34 @@ async def on_error_handler(event: ErrorEvent):
     tb_str = "".join(traceback.format_exception(
         type(event.exception), event.exception, event.exception.__traceback__
     ))
+    
+    update_json = event.update.model_dump_json(indent=2, exclude_none=True)
+    
+    combined_content = f"""{'=' * 60}
+TRACEBACK
+{'=' * 60}
+
+{tb_str}
+
+{'=' * 60}
+UPDATE DATA
+{'=' * 60}
+
+{update_json}
+"""
 
     short_error_message = (
         f"<b>❗️ Произошла ошибка!</b>\n\n"
         f"<b>Тип:</b> {type(event.exception).__name__}\n"
         f"<b>Текст:</b> {event.exception}\n\n"
-        f"Полный traceback и данные Update в прикрепленных файлах."
+        f"Полный traceback и данные Update в прикрепленном файле."
     )
 
-    traceback_file = BufferedInputFile(tb_str.encode('utf-8'), filename="traceback.txt")
-    update_file = BufferedInputFile(
-        event.update.model_dump_json(indent=2, exclude_none=True).encode('utf-8'),
-        filename="update.json"
-    )
+    error_file = BufferedInputFile(combined_content.encode('utf-8'), filename="error_report.txt")
 
     try:
         await bot.send_message(chat_id=ADMIN_ID, text=short_error_message, parse_mode='HTML')
-        await bot.send_document(chat_id=ADMIN_ID, document=traceback_file)
-        await bot.send_document(chat_id=ADMIN_ID, document=update_file)
+        await bot.send_document(chat_id=ADMIN_ID, document=error_file)
 
         # Уведомляем пользователя
         user_chat_id = None
