@@ -53,6 +53,8 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
             return
         
         today_tasks_copy, daily_tasks_copy = today_tasks.copy(), daily_tasks.copy()
+        today_tasks_chosen = user_data.get('today_tasks_chosen', [])
+        today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
         for name in edit_tasks_pool_chosen:
             if name in tasks_pool:
                 tasks_pool.remove(name)
@@ -61,9 +63,13 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
                     if today_tasks[key] == name:
                         if key in daily_chosen_tasks:
                             daily_chosen_tasks.remove(key)
+                        if key in today_tasks_chosen:
+                            today_tasks_chosen.remove(key)
                         del today_tasks_copy[key]
             if name in today_tasks_not_time:
                 today_tasks_not_time.remove(name)
+            if name in today_tasks_not_time_chosen:
+                today_tasks_not_time_chosen.remove(name)
             if name in daily_tasks_not_time_chosen:
                 daily_tasks_not_time_chosen.remove(name)
             if name in daily_tasks.values():
@@ -84,7 +90,9 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
             daily_chosen_tasks=daily_chosen_tasks, today_tasks=today_tasks_copy, 
             edit_tasks_pool_chosen=[], today_tasks_not_time=today_tasks_not_time,
             daily_tasks_not_time_chosen=daily_tasks_not_time_chosen, 
-            daily_tasks_not_time=daily_tasks_not_time
+            daily_tasks_not_time=daily_tasks_not_time,
+            today_tasks_chosen=today_tasks_chosen,
+            today_tasks_not_time_chosen=today_tasks_not_time_chosen
         )
         await edit_database(
             daily_tasks=daily_tasks_copy, 
@@ -129,6 +137,12 @@ async def add_tasks_pool(message, state: FSMContext):
     if not message.text:
         await message.answer('Введите список дел через запятую.')
         return
+    
+    # Проверка на кнопку "В Главное Меню"
+    if message.text.lower() == 'в главное меню':
+        await start(message=message, state=state)
+        return
+    
     data = message.text
     normalized_tasks = [item.strip() for item in data.split(',') if item.strip()]
     user_data = await state.get_data()
@@ -168,7 +182,10 @@ async def add_tasks_pool(message, state: FSMContext):
 @router.callback_query(StateFilter(ClientState.greet))
 async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=False):
     """Обработка расписания на сегодня."""
-    await call.answer()
+    try:
+        await call.answer()
+    except Exception:
+        pass
     data = call.data
     user_data = await state.get_data()
     tasks_pool = user_data.get('tasks_pool', [])
