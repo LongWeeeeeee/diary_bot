@@ -214,7 +214,10 @@ async def notification_set_date(message, state):
     
     job_id = user_data.get('job_id', '')
     if job_id:
-        scheduler.remove_job(job_id=job_id)
+        try:
+            scheduler.remove_job(job_id=job_id)
+        except Exception:
+            pass
     
     job_id = scheduler.add_job(
         tasks_pool_function,

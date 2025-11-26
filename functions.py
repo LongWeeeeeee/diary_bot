@@ -569,18 +569,22 @@ async def start(state: FSMContext, message: Message) -> None:
         data['previous_diary'] = previous_diary
         data['notifications_data'] = notifications_data
         if (notifications_data.get('chosen_notifications') == ['Включено'] 
-            and not user_data.get('job_id')
             and 'hours' in notifications_data 
             and 'minutes' in notifications_data):
-            hours = notifications_data['hours']
-            minutes = notifications_data['minutes']
-            job_id = scheduler.add_job(
-                tasks_pool_function,
-                trigger='cron',
-                hour=hours,
-                minute=minutes,
-                args=(message, state))
-            data['job_id'] = job_id.id
+            existing_job_id = user_data.get('job_id')
+            job_exists = existing_job_id and any(
+                job.id == existing_job_id for job in scheduler.get_jobs()
+            )
+            if not job_exists:
+                hours = notifications_data['hours']
+                minutes = notifications_data['minutes']
+                job_id = scheduler.add_job(
+                    tasks_pool_function,
+                    trigger='cron',
+                    hour=hours,
+                    minute=minutes,
+                    args=(message, state))
+                data['job_id'] = job_id.id
 
         await state.update_data(**data)
 
