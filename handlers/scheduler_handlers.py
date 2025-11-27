@@ -322,16 +322,34 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
         await message.answer('Неверный формат даты. Используйте ГГГГ-ММ-ДД, например, 2025-12-31.')
         return
 
+    # Парсим время из new_date_jobs если указано (формат "дело - ЧЧ:ММ")
+    task_time = datetime.time(0, 0)
+    if ' - ' in new_date_jobs:
+        parts = new_date_jobs.split(' - ')
+        time_str = parts[-1].strip()
+        try:
+            parsed_time = dt.strptime(time_str, '%H:%M')
+            task_time = datetime.time(parsed_time.hour, parsed_time.minute)
+        except ValueError:
+            pass  # Если не удалось распарсить время, используем 00:00
+
     now_aware = dt.now(TARGET_TZ)
-    naive_dt = datetime.datetime.combine(user_date_part, datetime.time(0, 0))
+    naive_dt = datetime.datetime.combine(user_date_part, task_time)
     scheduled_dt_aware = naive_dt.replace(tzinfo=TARGET_TZ)
 
     if now_aware < scheduled_dt_aware:
         month_ru = MONTH_NAMES_RU[scheduled_dt_aware.month - 1]
-        out_message = (
-            f'Я напомню вам : "{new_date_jobs}" {scheduled_dt_aware.day} {month_ru} '
-            f'{scheduled_dt_aware.year} в {scheduled_dt_aware.strftime("%H:%M")}'
-        )
+        # Не добавляем время в сообщение если оно 00:00
+        if task_time == datetime.time(0, 0):
+            out_message = (
+                f'Я напомню вам : "{new_date_jobs}" {scheduled_dt_aware.day} {month_ru} '
+                f'{scheduled_dt_aware.year}'
+            )
+        else:
+            out_message = (
+                f'Я напомню вам : "{new_date_jobs}" {scheduled_dt_aware.day} {month_ru} '
+                f'{scheduled_dt_aware.year}'
+            )
 
         try:
             await scheduler_list(

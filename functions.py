@@ -483,7 +483,7 @@ async def tasks_pool_function(message, state: FSMContext):
     )
     if today_tasks:
         await message.answer(
-            'Отметьте выполненные дела. Нижний список - дела, которые можно добавить в расписание на сегодня.',
+            'Отметьте выполненные дела\nДля формирования расписания нажмите "Добавить"',
             reply_markup=keyboard
         )
     else:
