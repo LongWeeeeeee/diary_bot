@@ -428,10 +428,20 @@ async def tasks_pool_function(message, state: FSMContext):
                 task_text = normalize_preserve_case(key.split(' : ')[1]).replace('"', '').replace(' - ', '-')
                 logger.debug(f"Adding scheduled task for today: {task_text}")
                 tmp = task_text.split('-')
-                if len(tmp) == 2:
-                    job_timing = tmp[1].split(' ')[0]
-                    if job_timing not in today_tasks:
-                        today_tasks[job_timing] = task_text
+                if len(tmp) >= 2:
+                    # Проверяем что второй элемент начинается с времени (ЧЧ:ММ)
+                    time_part = tmp[1].split(' ')[0]
+                    if ':' in time_part and len(time_part) == 5:
+                        job_timing = time_part
+                        # Убираем время из названия задачи, оставляем только название и суффикс
+                        task_name = tmp[0].strip()
+                        suffix_parts = tmp[1].split(' ')[1:]  # "каждый четверг"
+                        task_display = f"{task_name} {' '.join(suffix_parts)}".strip()
+                        if job_timing not in today_tasks:
+                            today_tasks[job_timing] = task_display
+                    else:
+                        if task_text not in today_tasks_not_time:
+                            today_tasks_not_time.append(task_text)
                 else:
                     if task_text not in today_tasks_not_time:
                         today_tasks_not_time.append(task_text)
