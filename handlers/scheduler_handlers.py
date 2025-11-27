@@ -26,9 +26,13 @@ router = Router(name="scheduler")
 
 
 def scheduler_display(key: str) -> str:
-    """Извлекает отображаемое название задачи из ключа."""
+    """Извлекает отображаемое название задачи из ключа, убирая служебное время."""
     try:
-        return key.split('Я напомню вам : ')[1].replace('"', '')
+        text = key.split('Я напомню вам : ')[1].replace('"', '')
+        # Убираем "в 00:00" из конца для разовых дел
+        if text.endswith(' в 00:00'):
+            text = text[:-8]
+        return text
     except IndexError:
         return key
 
