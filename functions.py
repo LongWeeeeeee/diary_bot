@@ -577,6 +577,9 @@ async def start(state: FSMContext, message: Message) -> None:
         one_time_tasks = await get_one_time_tasks(user_id_str)
         if not one_time_tasks:
             one_time_tasks = one_time_tasks_json
+        # Фильтруем разовые дела из daily_tasks (они не должны там сохраняться)
+        daily_tasks = {k: v for k, v in daily_tasks.items() if v not in one_time_tasks}
+        daily_tasks_not_time = [t for t in daily_tasks_not_time if t not in one_time_tasks]
         data['daily_tasks_not_time'] = daily_tasks_not_time
         data['tasks_pool'] = list(set(tasks_pool))
         data['daily_tasks'] = daily_tasks
