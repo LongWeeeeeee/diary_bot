@@ -618,9 +618,19 @@ async def start(state: FSMContext, message: Message) -> None:
             keyboard = generate_keyboard(['Заполнить Дневник'], last_button='Настройки')
         out_message = ''
         if personal_records:
-            record_message = "\n".join(f'{k} : {v}' for k, v in personal_records.items())
-            out_message += f'\n\nВаши рекорды:\n{record_message}'
-            await message.answer(out_message, reply_markup=keyboard)
+            # Фильтруем рекорды — показываем только актуальные дела из tasks_pool
+            filtered_records = {k: v for k, v in personal_records.items() if k in tasks_pool}
+            # Обновляем personal_records если были удалены неактуальные
+            if filtered_records != personal_records:
+                data['personal_records'] = filtered_records
+                await state.update_data(personal_records=filtered_records)
+                await edit_database(personal_records=filtered_records, user_id=message.from_user.id)
+            if filtered_records:
+                record_message = "\n".join(f'{k} : {v}' for k, v in filtered_records.items())
+                out_message += f'\n\nВаши рекорды:\n{record_message}'
+                await message.answer(out_message, reply_markup=keyboard)
+            else:
+                await message.answer('Главное меню', reply_markup=keyboard)
         else:
             await message.answer('Главное меню', reply_markup=keyboard)
 
