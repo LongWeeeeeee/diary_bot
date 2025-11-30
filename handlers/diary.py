@@ -194,14 +194,14 @@ async def personal_rate_1(call, state, flag=False) -> None:
         chat_id = ctx.get('chat_id', call.from_user.id)
         message = MessageProxy(chat_id=chat_id, from_user=call.from_user, bot=bot)
     
-    # Удаляем выполненные разовые дела с временем
-    for time in today_tasks_chosen:
-        if time in today_tasks and today_tasks[time] in one_time_tasks:
-            one_time_tasks.remove(today_tasks[time])
+    # Удаляем все разовые дела, которые были в расписании на сегодня (с временем)
+    for time_key, task_name in today_tasks.items():
+        if task_name in one_time_tasks:
+            one_time_tasks.remove(task_name)
             flag = True
     
-    # Удаляем выполненные разовые дела без времени
-    for task in today_tasks_not_time_activities:
+    # Удаляем все разовые дела, которые были в расписании на сегодня (без времени)
+    for task in today_tasks_not_time:
         if task in one_time_tasks:
             one_time_tasks.remove(task)
             flag = True
