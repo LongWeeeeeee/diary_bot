@@ -26,8 +26,6 @@ async def settings(message: Message, state: FSMContext = None) -> None:
             'Редактировать список дел', 
             'Разовые дела'
         ]
-        if 'personal_records' in user_data:
-            inp.append('Мои рекорды')
 
         keyboard = generate_keyboard(buttons=inp, last_button='В Главное Меню')
         await message.answer(text='Ваши Настройки', reply_markup=keyboard)

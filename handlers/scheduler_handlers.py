@@ -184,6 +184,15 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
 @router.message(StateFilter(ClientState.date_jobs_1))
 async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
     """Ввод нового дела для напоминания."""
+    if not message.text:
+        await message.answer('Введите название дела.')
+        return
+    
+    # Проверка на кнопку "В Главное Меню"
+    if message.text.lower() == 'в главное меню':
+        await start(message=message, state=state)
+        return
+    
     await state.update_data(new_date_jobs=message.text)
     keyboard = generate_keyboard(['В день недели', 'Число месяца', 'Каждый год', 'Разово'])
     await message.answer(

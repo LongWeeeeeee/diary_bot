@@ -467,6 +467,12 @@ async def change_one_time_tasks_3(message: Message, state: FSMContext) -> None:
     if not message.text:
         await message.answer('Введите список разовых дел через запятую.')
         return
+    
+    # Проверка на кнопку "В Главное Меню"
+    if message.text.lower() == 'в главное меню':
+        await start(message=message, state=state)
+        return
+    
     user_tasks = normalized(message.text).split(', ')
     user_data = await state.get_data()
     user_id = str(message.from_user.id)
