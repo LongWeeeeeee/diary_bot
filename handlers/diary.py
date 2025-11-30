@@ -196,12 +196,41 @@ async def personal_rate_1(call, state, flag=False) -> None:
         chat_id = ctx.get('chat_id', call.from_user.id)
         message = MessageProxy(chat_id=chat_id, from_user=call.from_user, bot=bot)
     
-    # Удаляем ВСЕ разовые дела после отправки дневника
+    # Удаляем только те разовые дела, которые были в расписании на сегодня
     if one_time_tasks:
-        logging.info(f"Clearing all one_time_tasks: {one_time_tasks}")
-        await replace_one_time_tasks(str(call.from_user.id), [])
-        await state.update_data(one_time_tasks=[])
-        db_updates['one_time_tasks'] = []
+        # Собираем разовые дела которые были добавлены в расписание
+        used_one_time = []
+        for task_name in today_tasks.values():
+            if task_name in one_time_tasks:
+                used_one_time.append(task_name)
+        for task in today_tasks_not_time:
+            if task in one_time_tasks:
+                used_one_time.append(task)
+        
+        if used_one_time:
+            logging.info(f"Removing used one_time_tasks: {used_one_time}")
+            # Оставляем только неиспользованные разовые дела
+            remaining_one_time = [t for t in one_time_tasks if t not in used_one_time]
+            await replace_one_time_tasks(str(call.from_user.id), remaining_one_time)
+            await state.update_data(one_time_tasks=remaining_one_time)
+            db_updates['one_time_tasks'] = remaining_one_time
+            
+            # Удаляем использованные разовые дела из today_tasks и today_tasks_not_time
+            today_tasks = {k: v for k, v in today_tasks.items() if v not in used_one_time}
+            today_tasks_not_time = [t for t in today_tasks_not_time if t not in used_one_time]
+            
+            # И из daily_tasks (сохранённое расписание)
+            daily_tasks = user_data.get('daily_tasks', {})
+            daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
+            daily_tasks = {k: v for k, v in daily_tasks.items() if v not in used_one_time}
+            daily_tasks_not_time = [t for t in daily_tasks_not_time if t not in used_one_time]
+            
+            await state.update_data(
+                today_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time,
+                daily_tasks=daily_tasks, daily_tasks_not_time=daily_tasks_not_time
+            )
+            db_updates['daily_tasks'] = daily_tasks
+            db_updates['daily_tasks_not_time'] = daily_tasks_not_time
     
     data_for_excel = {
         'tasks_pool': user_data.get('tasks_pool', []),
