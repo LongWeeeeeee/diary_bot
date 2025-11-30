@@ -196,30 +196,12 @@ async def personal_rate_1(call, state, flag=False) -> None:
         chat_id = ctx.get('chat_id', call.from_user.id)
         message = MessageProxy(chat_id=chat_id, from_user=call.from_user, bot=bot)
     
-    # Удаляем все разовые дела, которые были в расписании на сегодня (с временем)
-    logging.info(f"one_time_tasks before removal: {one_time_tasks}")
-    logging.info(f"today_tasks: {today_tasks}")
-    logging.info(f"today_tasks_not_time: {today_tasks_not_time}")
-    
-    for time_key, task_name in today_tasks.items():
-        if task_name in one_time_tasks:
-            logging.info(f"Removing one_time task (with time): {task_name}")
-            one_time_tasks.remove(task_name)
-            flag = True
-    
-    # Удаляем все разовые дела, которые были в расписании на сегодня (без времени)
-    for task in today_tasks_not_time:
-        if task in one_time_tasks:
-            logging.info(f"Removing one_time task (no time): {task}")
-            one_time_tasks.remove(task)
-            flag = True
-    
-    logging.info(f"one_time_tasks after removal: {one_time_tasks}, flag: {flag}")
-    
-    if flag:
-        await replace_one_time_tasks(str(call.from_user.id), one_time_tasks)
-        await state.update_data(one_time_tasks=one_time_tasks)
-        db_updates['one_time_tasks'] = one_time_tasks
+    # Удаляем ВСЕ разовые дела после отправки дневника
+    if one_time_tasks:
+        logging.info(f"Clearing all one_time_tasks: {one_time_tasks}")
+        await replace_one_time_tasks(str(call.from_user.id), [])
+        await state.update_data(one_time_tasks=[])
+        db_updates['one_time_tasks'] = []
     
     data_for_excel = {
         'tasks_pool': user_data.get('tasks_pool', []),
