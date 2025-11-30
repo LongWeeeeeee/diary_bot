@@ -21,9 +21,9 @@ async def settings(message: Message, state: FSMContext = None) -> None:
     if has_user_data(user_data):
         inp = [
             'Напоминания', 
-            'Дела в определенную дату', 
+            'В определенную дату', 
             'Опрашиваемые данные', 
-            'Редактировать список дел', 
+            'Список дел', 
             'Разовые дела'
         ]
 

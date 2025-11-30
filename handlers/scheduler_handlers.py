@@ -37,7 +37,7 @@ def scheduler_display(key: str) -> str:
         return key
 
 
-@router.message(lambda message: message.text and message.text.lower() == 'дела в определенную дату', StateFilter(ClientState.settings))
+@router.message(lambda message: message.text and message.text.lower() == 'в определенную дату', StateFilter(ClientState.settings))
 async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
     """Меню дел в определенную дату."""
     user_data = await state.get_data()

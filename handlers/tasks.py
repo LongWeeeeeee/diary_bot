@@ -18,7 +18,7 @@ from sqlite import (
 router = Router(name="tasks")
 
 
-@router.message(lambda message: message.text and message.text.lower() == 'редактировать список дел', StateFilter(ClientState.settings))
+@router.message(lambda message: message.text and message.text.lower() == 'список дел', StateFilter(ClientState.settings))
 async def edit_tasks_pool_handler(message: Message, state: FSMContext):
     """Редактирование общего списка дел."""
     user_data = await state.get_data()
