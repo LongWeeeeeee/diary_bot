@@ -356,6 +356,10 @@ async def tasks_pool_function(message, state: FSMContext):
         await state.set_state(ClientState.add_tasks_pool)
         return
     
+    # Всегда загружаем актуальные one_time_tasks из БД
+    one_time_tasks = await get_one_time_tasks(str(message.from_user.id))
+    state_updates['one_time_tasks'] = one_time_tasks
+    
     now = datetime.now(ZoneInfo("Europe/Moscow"))
     today_str = now.strftime("%Y-%m-%d")
     
