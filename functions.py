@@ -369,21 +369,25 @@ async def tasks_pool_function(message, state: FSMContext):
     
     today_tasks_not_time = user_data.get('today_tasks_not_time', [])
     today_tasks = user_data.get('today_tasks', {})
-    daily_tasks = user_data.get('daily_tasks', {})
-    if not daily_tasks:
-        profile = await ensure_profile()
-        if profile:
-            daily_tasks = json.loads(profile[8])
-            state_updates['daily_tasks'] = daily_tasks
+    # Всегда загружаем daily_tasks из БД для актуальности (разовые дела могли быть удалены)
+    profile = await ensure_profile()
+    if profile:
+        daily_tasks = json.loads(profile[8])
+        # Фильтруем разовые дела из daily_tasks (они не должны там сохраняться)
+        daily_tasks = {k: v for k, v in daily_tasks.items() if v not in one_time_tasks}
+        state_updates['daily_tasks'] = daily_tasks
+    else:
+        daily_tasks = user_data.get('daily_tasks', {})
     
-    daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
-    if not daily_tasks_not_time:
-        profile = await ensure_profile()
-        if profile:
-            daily_tasks_not_time = json.loads(profile[9])
-            # Фильтруем scheduled задачи из БД (могли попасть по ошибке)
-            daily_tasks_not_time = [t for t in daily_tasks_not_time if not _is_scheduled_task(t)]
-            state_updates['daily_tasks_not_time'] = daily_tasks_not_time
+    # Всегда загружаем daily_tasks_not_time из БД для актуальности
+    if profile:
+        daily_tasks_not_time = json.loads(profile[9])
+        # Фильтруем scheduled задачи и разовые дела из БД
+        daily_tasks_not_time = [t for t in daily_tasks_not_time 
+                                if not _is_scheduled_task(t) and t not in one_time_tasks]
+        state_updates['daily_tasks_not_time'] = daily_tasks_not_time
+    else:
+        daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
     
     # Если новый день - сбрасываем today_tasks до daily_tasks
     if is_new_day:

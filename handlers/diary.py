@@ -197,6 +197,10 @@ async def personal_rate_1(call, state, flag=False) -> None:
         message = MessageProxy(chat_id=chat_id, from_user=call.from_user, bot=bot)
     
     # Удаляем только те разовые дела, которые были в расписании на сегодня
+    logging.info(f"one_time_tasks: {one_time_tasks}")
+    logging.info(f"today_tasks: {today_tasks}")
+    logging.info(f"today_tasks_not_time: {today_tasks_not_time}")
+    
     if one_time_tasks:
         # Собираем разовые дела которые были добавлены в расписание
         used_one_time = []
@@ -206,6 +210,8 @@ async def personal_rate_1(call, state, flag=False) -> None:
         for task in today_tasks_not_time:
             if task in one_time_tasks:
                 used_one_time.append(task)
+        
+        logging.info(f"used_one_time: {used_one_time}")
         
         if used_one_time:
             logging.info(f"Removing used one_time_tasks: {used_one_time}")
