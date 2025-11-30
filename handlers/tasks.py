@@ -263,7 +263,6 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
 
     elif data == 'Добавить':
         # Загружаем актуальные one_time_tasks из БД
-        from sqlite import get_one_time_tasks
         one_time_tasks = await get_one_time_tasks(str(call.from_user.id))
         await state.update_data(one_time_tasks=one_time_tasks)
         
