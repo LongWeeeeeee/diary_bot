@@ -180,7 +180,9 @@ async def personal_rate_1(call, state, flag=False) -> None:
     today_tasks = user_data.get('today_tasks', {})
     today_tasks_chosen = user_data.get('today_tasks_chosen', [])
     activities = [today_tasks[key] for key in today_tasks_chosen if key in today_tasks]
-    one_time_tasks = user_data.get('one_time_tasks', [])
+    # Загружаем актуальные one_time_tasks из БД
+    from sqlite import get_one_time_tasks
+    one_time_tasks = await get_one_time_tasks(str(call.from_user.id))
     today_tasks_not_time = user_data.get('today_tasks_not_time', [])
     daily_tasks_not_time_chosen = user_data.get('daily_tasks_not_time_chosen', [])
     today_tasks_not_time_activities = [task for task in daily_tasks_not_time_chosen]
@@ -195,16 +197,24 @@ async def personal_rate_1(call, state, flag=False) -> None:
         message = MessageProxy(chat_id=chat_id, from_user=call.from_user, bot=bot)
     
     # Удаляем все разовые дела, которые были в расписании на сегодня (с временем)
+    logging.info(f"one_time_tasks before removal: {one_time_tasks}")
+    logging.info(f"today_tasks: {today_tasks}")
+    logging.info(f"today_tasks_not_time: {today_tasks_not_time}")
+    
     for time_key, task_name in today_tasks.items():
         if task_name in one_time_tasks:
+            logging.info(f"Removing one_time task (with time): {task_name}")
             one_time_tasks.remove(task_name)
             flag = True
     
     # Удаляем все разовые дела, которые были в расписании на сегодня (без времени)
     for task in today_tasks_not_time:
         if task in one_time_tasks:
+            logging.info(f"Removing one_time task (no time): {task}")
             one_time_tasks.remove(task)
             flag = True
+    
+    logging.info(f"one_time_tasks after removal: {one_time_tasks}, flag: {flag}")
     
     if flag:
         await replace_one_time_tasks(str(call.from_user.id), one_time_tasks)
