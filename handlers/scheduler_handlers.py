@@ -25,30 +25,16 @@ from sqlite import create_profile, edit_database
 router = Router(name="scheduler")
 
 
-def scheduler_display(key: str, max_len: int = 35) -> str:
-    """Извлекает отображаемое название задачи из ключа, сокращая для мобильных экранов."""
+def scheduler_display(key: str) -> str:
+    """Извлекает отображаемое название задачи из ключа."""
     try:
         text = key.split('Я напомню вам : ')[1].replace('"', '')
         # Убираем "в 00:00" из конца для разовых дел
         if text.endswith(' в 00:00'):
             text = text[:-8]
-        
-        # Сокращаем если текст слишком длинный
-        if len(text) > max_len:
-            # Убираем "каждый/каждую/каждое" для экономии места
-            text = text.replace(' каждый ', ' ')
-            text = text.replace(' каждую ', ' ')
-            text = text.replace(' каждое ', ' ')
-            # Убираем " - " и заменяем на короткое тире
-            text = text.replace(' - ', '-')
-        
-        # Если всё ещё длинный - обрезаем
-        if len(text) > max_len:
-            text = text[:max_len-2] + '..'
-        
         return text
     except IndexError:
-        return key[:max_len] if len(key) > max_len else key
+        return key
 
 
 # Все состояния настроек для навигации между пунктами
@@ -115,27 +101,35 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         user_data = await state.get_data()
         date_chosen_tasks = user_data.get('date_chosen_tasks', [])
         scheduler_arguments = user_data.get('scheduler_arguments', {})
+        date_jobs_keys = user_data.get('date_jobs_keys', [])
+        date_jobs_display = user_data.get('date_jobs_display', [])
         
-        for itr in date_chosen_tasks:
-            for key in list(scheduler_arguments.keys()):
-                values = scheduler_arguments[key]
-                values_copy = values.copy()
-                values_copy['args'] = (state, key)
-                if 'date' in values_copy:
-                    values_copy['date'] = dt.strptime(values['date'], '%Y-%m-%d')
-                elif 'run_date' in values_copy:
-                    try:
-                        values_copy['run_date'] = dt.strptime(values['run_date'], '%Y-%m-%d %H:%M')
-                    except ValueError:
-                        values_copy['run_date'] = dt.fromisoformat(values['run_date'])
-                unique_id = generate_unique_id_from_args(values_copy)
-                if any(job.id == unique_id for job in scheduler.get_jobs()):
-                    scheduler.remove_job(job_id=unique_id)
-
-            for key in list(scheduler_arguments.keys()):
-                if key.split('Я напомню вам : ')[1].replace('"', '') == itr:
-                    del scheduler_arguments[key]
-                    break
+        # Создаём маппинг display -> key для правильного удаления
+        display_to_key = dict(zip(date_jobs_display, date_jobs_keys))
+        
+        for display_text in date_chosen_tasks:
+            # Находим оригинальный ключ по display тексту
+            original_key = display_to_key.get(display_text)
+            if not original_key or original_key not in scheduler_arguments:
+                continue
+            
+            # Удаляем job из scheduler
+            values = scheduler_arguments[original_key]
+            values_copy = values.copy()
+            values_copy['args'] = (state, original_key)
+            if 'date' in values_copy:
+                values_copy['date'] = dt.strptime(values['date'], '%Y-%m-%d')
+            elif 'run_date' in values_copy:
+                try:
+                    values_copy['run_date'] = dt.strptime(values['run_date'], '%Y-%m-%d %H:%M')
+                except ValueError:
+                    values_copy['run_date'] = dt.fromisoformat(values['run_date'])
+            unique_id = generate_unique_id_from_args(values_copy)
+            if any(job.id == unique_id for job in scheduler.get_jobs()):
+                scheduler.remove_job(job_id=unique_id)
+            
+            # Удаляем из scheduler_arguments
+            del scheduler_arguments[original_key]
 
         if len(scheduler_arguments) == 0:
             user_data.pop('scheduler_arguments', None)
@@ -248,7 +242,17 @@ async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
             await date_jobs_keyboard(message=message, state=state)
         return
     
-    await state.update_data(new_date_jobs=message.text)
+    # Ограничение длины названия дела (для отображения на мобильных)
+    MAX_TASK_NAME_LEN = 25
+    task_name = message.text.strip()
+    if len(task_name) > MAX_TASK_NAME_LEN:
+        await message.answer(
+            f'Название слишком длинное ({len(task_name)} симв.).\n'
+            f'Максимум {MAX_TASK_NAME_LEN} символов. Сократите название.'
+        )
+        return
+
+    await state.update_data(new_date_jobs=task_name)
     keyboard = generate_keyboard(['В день недели', 'Число месяца', 'Каждый год', 'Разово'])
     await message.answer(
         'Выберите как и когда вы бы желали чтобы вам напомнили об этом деле',
