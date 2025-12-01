@@ -36,6 +36,10 @@ def scheduler_display(key: str) -> str:
         text = text.replace(' каждый ', ' ')
         text = text.replace(' каждую ', ' ')
         text = text.replace(' каждое ', ' ')
+        # Заменяем склонённые дни недели на именительный падеж
+        text = text.replace('среду', 'среда')
+        text = text.replace('пятницу', 'пятница')
+        text = text.replace('субботу', 'суббота')
         return text
     except IndexError:
         return key
