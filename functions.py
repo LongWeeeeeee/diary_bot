@@ -25,7 +25,8 @@ from config import (
 )
 from sqlite import (
     create_profile, edit_database, add_daily_log, get_last_logs, get_all_logs,
-    get_tasks_pool, get_one_time_tasks, get_user_data, get_full_user_state
+    get_tasks_pool, get_one_time_tasks, get_user_data, get_full_user_state,
+    parse_profile, ParsedProfile
 )
 
 ssl_ctx = ssl.create_default_context(cafile=certifi.where())
@@ -364,19 +365,19 @@ async def tasks_pool_function(message, state: FSMContext):
     if need_db_load:
         user_db_data = await get_user_data(user_id_str, include_today=not is_new_day)
         if user_db_data:
-            profile = user_db_data['profile']
+            p = parse_profile(user_db_data['profile'])
             if not tasks_pool:
-                tasks_pool = user_db_data['tasks_pool'] or list(set(json.loads(profile[1]) if profile[1] else []))
+                tasks_pool = user_db_data['tasks_pool'] or (list(set(p.tasks_pool)) if p else [])
                 state_updates['tasks_pool'] = tasks_pool
             
             one_time_tasks = user_db_data['one_time_tasks']
             state_updates['one_time_tasks'] = one_time_tasks
             
-            if profile:
-                daily_tasks = json.loads(profile[8]) if profile[8] else {}
-                daily_tasks_not_time = json.loads(profile[9]) if profile[9] else []
+            if p:
+                daily_tasks = p.daily_tasks
+                daily_tasks_not_time = p.daily_tasks_not_time
                 if not scheduler_arguments:
-                    scheduler_arguments = json.loads(profile[3]) if profile[3] else {}
+                    scheduler_arguments = p.scheduler_arguments
                     state_updates['scheduler_arguments'] = scheduler_arguments
     
     if not tasks_pool:
@@ -563,20 +564,17 @@ async def start(state: FSMContext, message: Message) -> None:
         db_data = await get_full_user_state(user_id_str)
     
     if db_data['profile'] is not None:
-        profile = db_data['profile']
+        # Парсим профиль один раз
+        p = parse_profile(db_data['profile'])
+        if not p:
+            await handle_new_user(message, state)
+            return
         
-        # Парсим JSON поля из профиля
-        scheduler_arguments = json.loads(profile[3]) if profile[3] else {}
-        personal_records = json.loads(profile[4]) if profile[4] else {}
-        previous_diary = profile[5] or ''
-        chosen_collected_data = json.loads(profile[6]) if profile[6] else []
-        notifications_data = json.loads(profile[7]) if profile[7] else {}
-        
-        # Используем данные из отдельных таблиц (уже загружены)
-        tasks_pool = db_data['tasks_pool'] or list(set(json.loads(profile[1]) if profile[1] else []))
-        one_time_tasks = db_data['one_time_tasks'] or (json.loads(profile[2]) if profile[2] else [])
-        daily_tasks = db_data['daily_tasks'] or (json.loads(profile[8]) if profile[8] else {})
-        daily_tasks_not_time = db_data['daily_tasks_not_time'] or (json.loads(profile[9]) if profile[9] else [])
+        # Используем данные из отдельных таблиц или из профиля
+        tasks_pool = db_data['tasks_pool'] or list(set(p.tasks_pool))
+        one_time_tasks = db_data['one_time_tasks'] or p.one_time_tasks
+        daily_tasks = db_data['daily_tasks'] or p.daily_tasks
+        daily_tasks_not_time = db_data['daily_tasks_not_time'] or p.daily_tasks_not_time
         
         # Фильтруем разовые дела из daily_tasks
         daily_tasks = {k: v for k, v in daily_tasks.items() if v not in one_time_tasks}
@@ -588,19 +586,19 @@ async def start(state: FSMContext, message: Message) -> None:
             'one_time_tasks': one_time_tasks,
             'daily_tasks': daily_tasks,
             'daily_tasks_not_time': daily_tasks_not_time,
-            'scheduler_arguments': scheduler_arguments,
-            'previous_diary': previous_diary,
-            'notifications_data': notifications_data,
-            'chosen_collected_data': chosen_collected_data,
+            'scheduler_arguments': p.scheduler_arguments,
+            'previous_diary': p.previous_diary,
+            'notifications_data': p.notifications_data,
+            'chosen_collected_data': p.chosen_collected_data,
         }
         
-        if personal_records:
-            state_updates['personal_records'] = personal_records
+        if p.personal_records:
+            state_updates['personal_records'] = p.personal_records
         
         # Настройка уведомлений
-        if (notifications_data.get('chosen_notifications') == ['Включено'] 
-            and 'hours' in notifications_data 
-            and 'minutes' in notifications_data):
+        if (p.notifications_data.get('chosen_notifications') == ['Включено'] 
+            and 'hours' in p.notifications_data 
+            and 'minutes' in p.notifications_data):
             existing_job_id = user_data.get('job_id')
             job_exists = existing_job_id and any(
                 job.id == existing_job_id for job in scheduler.get_jobs()
@@ -609,15 +607,15 @@ async def start(state: FSMContext, message: Message) -> None:
                 job_id = scheduler.add_job(
                     tasks_pool_function,
                     trigger='cron',
-                    hour=notifications_data['hours'],
-                    minute=notifications_data['minutes'],
+                    hour=p.notifications_data['hours'],
+                    minute=p.notifications_data['minutes'],
                     args=(message, state))
                 state_updates['job_id'] = job_id.id
 
         # Один вызов update_data
         await state.update_data(**state_updates)
 
-        user_id = json.loads(profile[0]) if profile[0] else message.from_user.id
+        user_id = p.user_id
         path = f"{user_id}_Diary.xlsx"
         if os.path.exists(path):
             keyboard = generate_keyboard(
@@ -627,10 +625,10 @@ async def start(state: FSMContext, message: Message) -> None:
             keyboard = generate_keyboard(['Заполнить Дневник'], last_button='Настройки')
         
         out_message = ''
-        if personal_records:
+        if p.personal_records:
             # Фильтруем рекорды — показываем только актуальные дела из tasks_pool
-            filtered_records = {k: v for k, v in personal_records.items() if k in tasks_pool}
-            if filtered_records != personal_records:
+            filtered_records = {k: v for k, v in p.personal_records.items() if k in tasks_pool}
+            if filtered_records != p.personal_records:
                 await state.update_data(personal_records=filtered_records)
                 await edit_database(personal_records=filtered_records, user_id=message.from_user.id)
             if filtered_records:
@@ -775,32 +773,37 @@ async def diary_out(message: Message) -> None:
         await message.answer("Дневник еще не создан. Сначала заполните его!")
         return
 
-    await message.answer(
-        "{} | {} | {} | {} | {} | {} ".format("Дата", "Дела за день", "Шаги", "Sleep quality", "О дне", "My rate"))
-
+    # Собираем все записи в один текст
+    lines = ["📅 Последние записи дневника:\n"]
+    
     for log_date, activities, steps, sleep_quality, about_day, personal_rate in reversed(logs):
         try:
             formatted_date = datetime.strptime(log_date, "%Y-%m-%d").strftime("%d.%m.%Y")
         except (TypeError, ValueError):
             formatted_date = log_date
 
-        steps_value = '-' if steps is None else steps
-        sleep_value = '-' if sleep_quality is None else sleep_quality
-        personal_rate_value = '-' if personal_rate is None else personal_rate
-
-        message_sheet = "{} | {} | {} | {} | {} | {}".format(
-            formatted_date,
-            activities or '-',
-            steps_value,
-            sleep_value,
-            about_day or '-',
-            personal_rate_value
-        )
-
-        message_parts = [message_sheet[i:i + 4096] for i in range(0, len(message_sheet), 4096)]
-
-        for part in message_parts:
-            await message.answer(part)
+        steps_val = '-' if steps is None else int(steps) if steps == int(steps) else steps
+        sleep_val = '-' if sleep_quality is None else sleep_quality
+        rate_val = '-' if personal_rate is None else int(personal_rate)
+        
+        # Компактный формат
+        entry = f"📆 {formatted_date} | ⭐ {rate_val}/10"
+        if steps_val != '-':
+            entry += f" | 👣 {steps_val}"
+        if sleep_val != '-':
+            entry += f" | 😴 {sleep_val}"
+        lines.append(entry)
+        
+        if activities and activities != '-':
+            lines.append(f"   ✅ {activities[:100]}{'...' if len(activities) > 100 else ''}")
+        if about_day and about_day != '-':
+            lines.append(f"   💭 {about_day[:150]}{'...' if len(about_day) > 150 else ''}")
+        lines.append("")
+    
+    # Отправляем одним сообщением (или несколькими если > 4096)
+    full_text = "\n".join(lines)
+    for i in range(0, len(full_text), 4096):
+        await message.answer(full_text[i:i + 4096])
 
 
 

@@ -3,8 +3,9 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from functools import wraps
-from typing import Dict, List, Optional, TypeVar, Callable
+from typing import Dict, List, Optional, TypeVar, Callable, Any
 
 import aiosqlite
 
@@ -16,6 +17,43 @@ RETRY_DELAY = 0.1
 POOL_SIZE = 5
 
 T = TypeVar('T')
+
+
+@dataclass
+class ParsedProfile:
+    """Распарсенный профиль пользователя."""
+    user_id: str
+    tasks_pool: List[str]
+    one_time_tasks: List[str]
+    scheduler_arguments: Dict[str, Any]
+    personal_records: Dict[str, Any]
+    previous_diary: str
+    chosen_collected_data: List[str]
+    notifications_data: Dict[str, Any]
+    daily_tasks: Dict[str, str]
+    daily_tasks_not_time: List[str]
+
+
+def parse_profile(row: tuple) -> Optional[ParsedProfile]:
+    """Парсит строку профиля из БД в объект."""
+    if not row:
+        return None
+    try:
+        return ParsedProfile(
+            user_id=str(json.loads(row[0]) if row[0] else row[0]),
+            tasks_pool=json.loads(row[1]) if row[1] else [],
+            one_time_tasks=json.loads(row[2]) if row[2] else [],
+            scheduler_arguments=json.loads(row[3]) if row[3] else {},
+            personal_records=json.loads(row[4]) if row[4] else {},
+            previous_diary=row[5] or '',
+            chosen_collected_data=json.loads(row[6]) if row[6] else [],
+            notifications_data=json.loads(row[7]) if row[7] else {},
+            daily_tasks=json.loads(row[8]) if row[8] else {},
+            daily_tasks_not_time=json.loads(row[9]) if row[9] else []
+        )
+    except (json.JSONDecodeError, IndexError) as e:
+        logger.error(f"Error parsing profile: {e}")
+        return None
 
 
 class ConnectionPool:
