@@ -37,7 +37,11 @@ def scheduler_display(key: str) -> str:
         return key
 
 
-@router.message(lambda message: message.text and message.text.lower() == 'в определенную дату', StateFilter(ClientState.settings))
+@router.message(lambda message: message.text and message.text.lower() == 'в определенную дату', StateFilter(
+    ClientState.settings, ClientState.collected_data, ClientState.notification_proceed, 
+    ClientState.notification_set_date, ClientState.edit_tasks_pool, ClientState.one_time_tasks_2,
+    ClientState.one_time_tasks_3, ClientState.date_jobs, ClientState.date_jobs_1, ClientState.date_jobs_2
+))
 async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
     """Меню дел в определенную дату."""
     user_data = await state.get_data()
@@ -181,6 +185,13 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
                 raise
 
 
+# Кнопки настроек для проверки
+SETTINGS_BUTTONS = [
+    'в главное меню', 'напоминания', 'в определенную дату', 
+    'опрашиваемые данные', 'список дел', 'разовые дела', 'настройки'
+]
+
+
 @router.message(StateFilter(ClientState.date_jobs_1))
 async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
     """Ввод нового дела для напоминания."""
@@ -188,9 +199,27 @@ async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
         await message.answer('Введите название дела.')
         return
     
-    # Проверка на кнопку "В Главное Меню"
-    if message.text.lower() == 'в главное меню':
-        await start(message=message, state=state)
+    # Проверка на кнопки настроек
+    if message.text.lower() in SETTINGS_BUTTONS:
+        if message.text.lower() == 'в главное меню':
+            await start(message=message, state=state)
+        elif message.text.lower() == 'настройки':
+            from handlers.settings import settings
+            await settings(message=message, state=state)
+        elif message.text.lower() == 'напоминания':
+            from handlers.settings import notifications
+            await notifications(message=message, state=state)
+        elif message.text.lower() == 'опрашиваемые данные':
+            from handlers.settings import collected_data
+            await collected_data(message=message, state=state)
+        elif message.text.lower() == 'список дел':
+            from handlers.tasks import edit_tasks_pool_handler
+            await edit_tasks_pool_handler(message=message, state=state)
+        elif message.text.lower() == 'разовые дела':
+            from handlers.tasks import change_one_time_tasks
+            await change_one_time_tasks(message=message, state=state)
+        elif message.text.lower() == 'в определенную дату':
+            await date_jobs_keyboard(message=message, state=state)
         return
     
     await state.update_data(new_date_jobs=message.text)
