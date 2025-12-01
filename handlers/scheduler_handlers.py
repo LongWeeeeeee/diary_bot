@@ -51,13 +51,15 @@ SETTINGS_STATES = (
 async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
     """Меню дел в определенную дату."""
     user_data = await state.get_data()
-    await state.update_data(message_ctx={'chat_id': message.chat.id})
+    state_updates = {'message_ctx': {'chat_id': message.chat.id}}
+    
     profile_row = await create_profile(user_id=message.from_user.id)
     if profile_row:
         scheduler_arguments = json.loads(profile_row[3])
-        await state.update_data(scheduler_arguments=scheduler_arguments)
+        state_updates['scheduler_arguments'] = scheduler_arguments
     
     if has_user_data(user_data):
+        await state.update_data(**state_updates)
         data = await state.get_data()
         if data.get('scheduler_arguments'):
             scheduler_keys = sorted(data['scheduler_arguments'].keys())

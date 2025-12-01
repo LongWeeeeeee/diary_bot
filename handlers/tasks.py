@@ -34,9 +34,8 @@ async def edit_tasks_pool_handler(message: Message, state: FSMContext):
     user_data = await state.get_data()
     user_id = str(message.from_user.id)
     tasks_pool = await get_tasks_pool(user_id)
-    await state.update_data(tasks_pool=tasks_pool)
     edit_tasks_pool_chosen = user_data.get('edit_tasks_pool_chosen', [])
-    await state.update_data(tasks_to_delete=[])
+    await state.update_data(tasks_pool=tasks_pool, tasks_to_delete=[])
 
     keyboard = keyboard_builder(tasks_list=tasks_pool, add_dell=True, chosen=edit_tasks_pool_chosen)
     settings_buttons = ['Напоминания', 'В определенную дату', 'Опрашиваемые данные', 'Список дел', 'Разовые дела']
@@ -319,12 +318,14 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
 
     else:
         # Выбор/снятие выбора задачи
+        state_update_key = None
         if ':' in data:
             if data in today_tasks_chosen:
                 today_tasks_chosen.remove(data)
             else:
                 today_tasks_chosen.append(data)
-            await state.update_data(today_tasks_chosen=today_tasks_chosen)
+            state_update_key = 'today_tasks_chosen'
+            state_update_val = today_tasks_chosen
         else:
             try:
                 idx = int(data)
@@ -334,7 +335,8 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
                         today_tasks_not_time_chosen.remove(temp)
                     else:
                         today_tasks_not_time_chosen.append(temp)
-                    await state.update_data(today_tasks_not_time_chosen=today_tasks_not_time_chosen)
+                    state_update_key = 'today_tasks_not_time_chosen'
+                    state_update_val = today_tasks_not_time_chosen
                 else:
                     await call.answer("Список задач обновился, выберите заново.", show_alert=True)
                     keyboard = keyboard_builder(
@@ -347,6 +349,9 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
             except (ValueError, IndexError):
                 await call.answer("Некорректный выбор.", show_alert=True)
                 return
+        
+        if state_update_key:
+            await state.update_data(**{state_update_key: state_update_val})
         
         keyboard = keyboard_builder(
             tasks_dict=today_tasks, tasks_list=today_tasks_not_time,

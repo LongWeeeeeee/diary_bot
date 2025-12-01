@@ -111,7 +111,6 @@ async def collected_data_proceed(call, state):
 async def notifications(message: Message, state: FSMContext) -> None:
     """Настройка ежедневных напоминаний."""
     user_data = await state.get_data()
-    await state.update_data(message_ctx={'chat_id': message.chat.id})
     notifications_data = user_data.get('notifications_data', {})
     chosen_notifications = notifications_data.get('chosen_notifications', [])
     
@@ -153,13 +152,14 @@ async def notifications_proceed(call, state):
     
     if data == 0:
         # Переключение вкл/выкл
+        state_updates = {}
         chosen_notifications = notifications_data.get('chosen_notifications', [])
         if 'Включено' in chosen_notifications:
             notifications_data['chosen_notifications'] = []
         else:
             notifications_data['chosen_notifications'] = ['Включено']
         
-        await state.update_data(notifications_data=notifications_data)
+        state_updates['notifications_data'] = notifications_data
         await edit_database(notifications_data=notifications_data, user_id=call.from_user.id)
         
         date_builder = InlineKeyboardBuilder()
@@ -178,7 +178,7 @@ async def notifications_proceed(call, state):
                 minute=minutes,
                 args=(message_proxy, state)
             )
-            await state.update_data(job_id=job_id.id)
+            state_updates['job_id'] = job_id.id
         else:
             job_id = user_data.get('job_id', '')
             if job_id:
@@ -186,7 +186,9 @@ async def notifications_proceed(call, state):
                     scheduler.remove_job(job_id=job_id)
                 except Exception:
                     pass
-                await state.update_data(job_id='')
+                state_updates['job_id'] = ''
+        
+        await state.update_data(**state_updates)
         
         await bot.edit_message_reply_markup(
             chat_id=call.message.chat.id,

@@ -669,33 +669,30 @@ async def executing_scheduler_job(state: FSMContext, out_message: str) -> None:
     # Получаем данные как можно позже, чтобы уменьшить вероятность гонки
     user_states_data = await state.get_data()
     user_id = user_states_data.get('user_id', None)
+    state_updates = {}
 
     if len(tmp) == 2:
         job, job_timing = text_normalized.split('-')[0], text_normalized.split('-')[1].split(' ')[0]
-        # 1. Безопасно получаем список one_time_tasks из состояния
-        # Если его нет, создаем пустой список
         today_tasks = user_states_data.get('today_tasks', {})
-
-        # 2. Добавляем новую задачу в список, если её там ещё нет или она отличается
         if today_tasks.get(job_timing) != job:
             today_tasks[job_timing] = job
-            # 3. Обновляем состояние
-            await state.update_data(today_tasks=today_tasks)
+            state_updates['today_tasks'] = today_tasks
     else:
         today_tasks_not_time = user_states_data.get('today_tasks_not_time', [])
-        # Avoid duplicates - only add if not already present
         if text_normalized not in today_tasks_not_time:
             today_tasks_not_time.append(text_normalized)
-            await state.update_data(today_tasks_not_time=today_tasks_not_time)
+            state_updates['today_tasks_not_time'] = today_tasks_not_time
     
-    # 4. Если это было разовое напоминание (trigger='date'), удаляем его из scheduler_arguments
+    # Если это было разовое напоминание (trigger='date'), удаляем его из scheduler_arguments
     scheduler_arguments = user_states_data.get('scheduler_arguments', {})
     if out_message in scheduler_arguments and scheduler_arguments[out_message].get('trigger') == 'date':
         del scheduler_arguments[out_message]
-        await state.update_data(scheduler_arguments=scheduler_arguments)
+        state_updates['scheduler_arguments'] = scheduler_arguments
         if user_id:
             await edit_database(scheduler_arguments=scheduler_arguments, user_id=user_id)
 
+    if state_updates:
+        await state.update_data(**state_updates)
     logger.info(f"Successfully added scheduled task '{text_normalized}' to daily_tasks for user {user_id}")
 
 
