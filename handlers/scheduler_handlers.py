@@ -106,6 +106,7 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         
         # Создаём маппинг display -> key для правильного удаления
         display_to_key = dict(zip(date_jobs_display, date_jobs_keys))
+        deleted_tasks = []
         
         for display_text in date_chosen_tasks:
             # Находим оригинальный ключ по display тексту
@@ -130,6 +131,11 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
             
             # Удаляем из scheduler_arguments
             del scheduler_arguments[original_key]
+            deleted_tasks.append(display_text)
+        
+        # Сообщаем об удалённых задачах
+        for task in deleted_tasks:
+            await call.message.answer(f'Вы удалили "{task}"')
 
         if len(scheduler_arguments) == 0:
             user_data.pop('scheduler_arguments', None)
