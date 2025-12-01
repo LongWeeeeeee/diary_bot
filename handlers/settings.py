@@ -68,10 +68,13 @@ async def collected_data(message: Message, state: FSMContext) -> None:
         grid=2, 
         price_tag=False
     )
+    settings_buttons = ['Напоминания', 'В определенную дату', 'Опрашиваемые данные', 'Список дел', 'Разовые дела']
     await message.answer(
         reply_markup=keyboard, 
         text='Зеленая галочка означает что настройки будут работать, серая - что выключены'
     )
+    await message.answer('Выберите опцию или перейдите в другой раздел', 
+                        reply_markup=generate_keyboard(settings_buttons, last_button='В Главное Меню'))
     await state.set_state(ClientState.collected_data)
 
 
@@ -127,6 +130,9 @@ async def notifications(message: Message, state: FSMContext) -> None:
         reply_markup=date_builder.as_markup(),
         text=f'Текущее время ежедневных уведомлений {hours}:{minutes:02d}'
     )
+    settings_buttons = ['Напоминания', 'В определенную дату', 'Опрашиваемые данные', 'Список дел', 'Разовые дела']
+    await message.answer('Выберите опцию или перейдите в другой раздел', 
+                        reply_markup=generate_keyboard(settings_buttons, last_button='В Главное Меню'))
     await state.set_state(ClientState.notification_proceed)
 
 

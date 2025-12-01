@@ -39,7 +39,10 @@ async def edit_tasks_pool_handler(message: Message, state: FSMContext):
     await state.update_data(tasks_to_delete=[])
 
     keyboard = keyboard_builder(tasks_list=tasks_pool, add_dell=True, chosen=edit_tasks_pool_chosen)
+    settings_buttons = ['Напоминания', 'В определенную дату', 'Опрашиваемые данные', 'Список дел', 'Разовые дела']
     await message.answer("Ваш общий список дел", reply_markup=keyboard)
+    await message.answer('Выберите дела или перейдите в другой раздел', 
+                        reply_markup=generate_keyboard(settings_buttons, last_button='В Главное Меню'))
     await state.set_state(ClientState.edit_tasks_pool)
 
 
@@ -442,7 +445,10 @@ async def change_one_time_tasks(message: Message, state: FSMContext) -> None:
     await state.update_data(one_time_tasks=one_time_tasks)
     one_time_chosen_tasks = user_data.get('one_time_chosen_tasks', [])
     keyboard = keyboard_builder(tasks_list=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
+    settings_buttons = ['Напоминания', 'В определенную дату', 'Опрашиваемые данные', 'Список дел', 'Разовые дела']
     await message.answer('Ваши разовые дела', reply_markup=keyboard)
+    await message.answer('Выберите дела или перейдите в другой раздел', 
+                        reply_markup=generate_keyboard(settings_buttons, last_button='В Главное Меню'))
     await state.set_state(ClientState.one_time_tasks_2)
 
 
