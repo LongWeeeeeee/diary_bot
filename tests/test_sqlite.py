@@ -8,7 +8,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Используем тестовую БД
 import sqlite as db_module
-db_module.DB_PATH = ':memory:'
 
 
 @pytest.fixture
@@ -17,6 +16,14 @@ def event_loop():
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+
+
+@pytest.fixture(autouse=True)
+def reset_db(event_loop):
+    """Сбрасывает пул соединений перед каждым тестом."""
+    event_loop.run_until_complete(db_module.reset_pool())
+    yield
+    event_loop.run_until_complete(db_module.reset_pool())
 
 
 @pytest.mark.asyncio

@@ -25,7 +25,7 @@ from config import (
 )
 from sqlite import (
     create_profile, edit_database, add_daily_log, get_last_logs, get_all_logs,
-    get_tasks_pool, get_one_time_tasks
+    get_tasks_pool, get_one_time_tasks, get_user_data, get_full_user_state
 )
 
 ssl_ctx = ssl.create_default_context(cafile=certifi.where())
@@ -190,44 +190,57 @@ def counter_positive(current_word, column):
 
 
 async def scheduler_in(data, state, message):
-    if 'scheduler_arguments' in data:
-        # загрузка в scheduler заданий из database
-        for key in list(data['scheduler_arguments'].keys()):
-            values = data['scheduler_arguments'][key]
-            await state.update_data(user_id=message.from_user.id,)
-            values_copy = values.copy()
-            values_copy['args'] = (state, key)
-            if 'date' in values_copy:
-                try:
-                    values_copy['date'] = datetime.fromisoformat(values['date'])
-                except Exception:
-                    values_copy['date'] = datetime.strptime(values['date'], '%Y-%m-%d')
-                # Ensure timezone is set for date field
-                if values_copy['date'].tzinfo is None:
-                    values_copy['date'] = values_copy['date'].replace(tzinfo=TARGET_TZ)
-            elif 'run_date' in values_copy:
-                try:
-                    values_copy['run_date'] = datetime.fromisoformat(values['run_date'])
-                except Exception:
-                    values_copy['run_date'] = datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
-                if values_copy['run_date'].tzinfo is None:
-                    values_copy['run_date'] = values_copy['run_date'].replace(tzinfo=TARGET_TZ)
-                current_date = datetime.now(TARGET_TZ)
-                if current_date > (values_copy['run_date'] + timedelta(minutes=1)):
-                    del data['scheduler_arguments'][key]
-                    continue
-            unique_id = generate_unique_id_from_args(values_copy)
-            if not any(job.id == unique_id for job in scheduler.get_jobs()):
-                values_copy['id'] = unique_id
-                if 'day_of_week' in values_copy and isinstance(values_copy['day_of_week'], list):
-                    values_copy['day_of_week'] = values_copy['day_of_week'][0]
-                scheduler.add_job(executing_scheduler_job, **values_copy)
-                # НЕ выполняем немедленно - задачи добавятся при открытии расписания
-
-        if len(data['scheduler_arguments']) == 0:
-            del data['scheduler_arguments']
-            await state.set_data(data)
-            await edit_database(scheduler_arguments={}, user_id=message.from_user.id)
+    scheduler_arguments = data.get('scheduler_arguments', {})
+    if not scheduler_arguments:
+        return
+    
+    # Кэшируем существующие job IDs для быстрого поиска
+    existing_job_ids = {job.id for job in scheduler.get_jobs()}
+    current_date = datetime.now(TARGET_TZ)
+    expired_keys = []
+    
+    # Один вызов update_data в начале
+    await state.update_data(user_id=message.from_user.id)
+    
+    for key, values in scheduler_arguments.items():
+        values_copy = values.copy()
+        values_copy['args'] = (state, key)
+        
+        # Обработка дат
+        if 'date' in values_copy:
+            try:
+                dt_val = datetime.fromisoformat(values['date']) if isinstance(values['date'], str) else values['date']
+            except Exception:
+                dt_val = datetime.strptime(values['date'], '%Y-%m-%d')
+            if dt_val.tzinfo is None:
+                dt_val = dt_val.replace(tzinfo=TARGET_TZ)
+            values_copy['date'] = dt_val
+        elif 'run_date' in values_copy:
+            try:
+                dt_val = datetime.fromisoformat(values['run_date']) if isinstance(values['run_date'], str) else values['run_date']
+            except Exception:
+                dt_val = datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
+            if dt_val.tzinfo is None:
+                dt_val = dt_val.replace(tzinfo=TARGET_TZ)
+            values_copy['run_date'] = dt_val
+            
+            if current_date > (dt_val + timedelta(minutes=1)):
+                expired_keys.append(key)
+                continue
+        
+        unique_id = generate_unique_id_from_args(values_copy)
+        if unique_id not in existing_job_ids:
+            values_copy['id'] = unique_id
+            if 'day_of_week' in values_copy and isinstance(values_copy['day_of_week'], list):
+                values_copy['day_of_week'] = values_copy['day_of_week'][0]
+            scheduler.add_job(executing_scheduler_job, **values_copy)
+    
+    # Удаляем просроченные задачи
+    if expired_keys:
+        for key in expired_keys:
+            del scheduler_arguments[key]
+        await state.update_data(scheduler_arguments=scheduler_arguments)
+        await edit_database(scheduler_arguments=scheduler_arguments, user_id=message.from_user.id)
 
 
 def keyboard_builder(
@@ -244,39 +257,35 @@ def keyboard_builder(
 ) -> types.InlineKeyboardMarkup:
     data_builder = InlineKeyboardBuilder()
     tasks_pool_builder = InlineKeyboardBuilder()
+    chosen_set = set(chosen) if chosen else set()
+    
     if tasks_list is not None:
         for index, task in enumerate(tasks_list):
             if chosen is not None:
-                if task in chosen:
-                    data_builder.button(text=f"{task} ✅️", callback_data=f"{index}")
-                else:
-                    data_builder.button(text=f"{task} ✔️", callback_data=f"{index}")
+                mark = "\u2705\ufe0f" if task in chosen_set else "\u2714\ufe0f"
+                data_builder.button(text=f"{task} {mark}", callback_data=str(index))
             else:
-                tasks_pool_builder.button(text=f"{task}", callback_data=f"{index}")
+                tasks_pool_builder.button(text=task, callback_data=str(index))
+    
     if tasks_dict is not None:
-        today_tasks = dict(sorted(
-            tasks_dict.items(),
-            key=lambda item: parse_time_key(item[0])
-        ))
-        chosen_set = chosen or []
-        for time, task in today_tasks.items():
+        sorted_tasks = sorted(tasks_dict.items(), key=lambda item: parse_time_key(item[0]))
+        for time, task in sorted_tasks:
             if checks:
-                data_builder.button(text=f"{time} {task} ✔️", callback_data=f"{time}")
+                data_builder.button(text=f"{time} {task} \u2714\ufe0f", callback_data=time)
             elif not price_tag:
-                if time in chosen_set:
-                    data_builder.button(text=f"{time} {task} ✅️", callback_data=f"{time}")
-                else:
-                    data_builder.button(text=f"{time} {task} ✔️", callback_data=f"{time}")
+                mark = "\u2705\ufe0f" if time in chosen_set else "\u2714\ufe0f"
+                data_builder.button(text=f"{time} {task} {mark}", callback_data=time)
 
     data_builder.adjust(grid, grid)
     d_new_builder = InlineKeyboardBuilder()
+    
     if add_money:
-        d_new_builder.button(text="Начислить 💰", callback_data="Начислить")
+        d_new_builder.button(text="\U0001F4B0 Начислить", callback_data="Начислить")
     if add_dell:
         if add_save:
-            d_new_builder.button(text="💾Сохранить 💾", callback_data="Сохранить")
-        d_new_builder.button(text="💼Добавить 💼", callback_data="Добавить")
-        d_new_builder.button(text="❌Удалить❌", callback_data="Удалить")
+            d_new_builder.button(text="\U0001F4BE Сохранить \U0001F4BE", callback_data="Сохранить")
+        d_new_builder.button(text="\U0001F4BC Добавить \U0001F4BC", callback_data="Добавить")
+        d_new_builder.button(text="\u274c Удалить \u274c", callback_data="Удалить")
     if last_button:
         callback = re.sub(r'[\U0001F000-\U0001FAFF\s]+', '', last_button)
         d_new_builder.button(text=last_button, callback_data=callback)
@@ -284,15 +293,14 @@ def keyboard_builder(
             d_new_builder.adjust(1, 2, 1)
         else:
             d_new_builder.adjust(1, 2)
+    
     tasks_pool_builder.adjust(1, 1)
     if chosen is not None:
         data_builder.attach(d_new_builder)
-        # data_builder.attach(tasks_pool_builder)
-        return_builder = data_builder
+        return data_builder.as_markup()
     else:
-        return_builder = tasks_pool_builder.attach(d_new_builder)
-    return return_builder.as_markup()
-
+        tasks_pool_builder.attach(d_new_builder)
+        return tasks_pool_builder.as_markup()
 
 
 
@@ -332,33 +340,10 @@ async def handle_new_user(message: Message, state: FSMContext) -> None:
 async def tasks_pool_function(message, state: FSMContext):
     """Показывает расписание на сегодня для заполнения дневника."""
     user_data = await state.get_data()
-    profile_row = None
-
-    async def ensure_profile():
-        nonlocal profile_row
-        if profile_row is None:
-            profile_row = await create_profile(user_id=message.from_user.id)
-        return profile_row
+    user_id_str = str(message.from_user.id)
 
     # Собираем все данные для одного update_data в конце
     state_updates = {}
-    
-    tasks_pool = user_data.get('tasks_pool', [])
-    if not tasks_pool:
-        profile = await ensure_profile()
-        if profile:
-            tasks_pool_json = json.loads(profile[1])
-            tasks_pool_db = await get_tasks_pool(str(message.from_user.id))
-            tasks_pool = tasks_pool_db or list(set(tasks_pool_json))
-            state_updates['tasks_pool'] = tasks_pool
-    if not tasks_pool:
-        await message.answer('Ваш список дел пуст! Добавьте ваши общие дела через запятую.')
-        await state.set_state(ClientState.add_tasks_pool)
-        return
-    
-    # Всегда загружаем актуальные one_time_tasks из БД
-    one_time_tasks = await get_one_time_tasks(str(message.from_user.id))
-    state_updates['one_time_tasks'] = one_time_tasks
     
     now = datetime.now(ZoneInfo("Europe/Moscow"))
     today_str = now.strftime("%Y-%m-%d")
@@ -367,27 +352,47 @@ async def tasks_pool_function(message, state: FSMContext):
     last_tasks_date = user_data.get('today_tasks_date', None)
     is_new_day = last_tasks_date != today_str
     
-    today_tasks_not_time = user_data.get('today_tasks_not_time', [])
-    today_tasks = user_data.get('today_tasks', {})
-    # Всегда загружаем daily_tasks из БД для актуальности (разовые дела могли быть удалены)
-    profile = await ensure_profile()
-    if profile:
-        daily_tasks = json.loads(profile[8])
-        # Фильтруем разовые дела из daily_tasks (они не должны там сохраняться)
-        daily_tasks = {k: v for k, v in daily_tasks.items() if v not in one_time_tasks}
-        state_updates['daily_tasks'] = daily_tasks
-    else:
-        daily_tasks = user_data.get('daily_tasks', {})
+    # Получаем данные из state или БД
+    tasks_pool = user_data.get('tasks_pool', [])
+    one_time_tasks = user_data.get('one_time_tasks', [])
+    daily_tasks = user_data.get('daily_tasks', {})
+    daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
+    scheduler_arguments = user_data.get('scheduler_arguments', {})
     
-    # Всегда загружаем daily_tasks_not_time из БД для актуальности
-    if profile:
-        daily_tasks_not_time = json.loads(profile[9])
-        # Фильтруем scheduled задачи и разовые дела из БД
-        daily_tasks_not_time = [t for t in daily_tasks_not_time 
-                                if not _is_scheduled_task(t) and t not in one_time_tasks]
-        state_updates['daily_tasks_not_time'] = daily_tasks_not_time
-    else:
-        daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
+    # Загружаем из БД только если данных нет в state
+    need_db_load = not tasks_pool or is_new_day
+    if need_db_load:
+        user_db_data = await get_user_data(user_id_str, include_today=not is_new_day)
+        if user_db_data:
+            profile = user_db_data['profile']
+            if not tasks_pool:
+                tasks_pool = user_db_data['tasks_pool'] or list(set(json.loads(profile[1]) if profile[1] else []))
+                state_updates['tasks_pool'] = tasks_pool
+            
+            one_time_tasks = user_db_data['one_time_tasks']
+            state_updates['one_time_tasks'] = one_time_tasks
+            
+            if profile:
+                daily_tasks = json.loads(profile[8]) if profile[8] else {}
+                daily_tasks_not_time = json.loads(profile[9]) if profile[9] else []
+                if not scheduler_arguments:
+                    scheduler_arguments = json.loads(profile[3]) if profile[3] else {}
+                    state_updates['scheduler_arguments'] = scheduler_arguments
+    
+    if not tasks_pool:
+        await message.answer('Ваш список дел пуст! Добавьте ваши общие дела через запятую.')
+        await state.set_state(ClientState.add_tasks_pool)
+        return
+    
+    # Фильтруем разовые дела из daily_tasks
+    daily_tasks = {k: v for k, v in daily_tasks.items() if v not in one_time_tasks}
+    daily_tasks_not_time = [t for t in daily_tasks_not_time 
+                            if not _is_scheduled_task(t) and t not in one_time_tasks]
+    state_updates['daily_tasks'] = daily_tasks
+    state_updates['daily_tasks_not_time'] = daily_tasks_not_time
+    
+    today_tasks = user_data.get('today_tasks', {})
+    today_tasks_not_time = user_data.get('today_tasks_not_time', [])
     
     # Если новый день - сбрасываем today_tasks до daily_tasks
     if is_new_day:
@@ -420,30 +425,17 @@ async def tasks_pool_function(message, state: FSMContext):
     today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
 
     # Добавляем scheduled задачи на сегодня
-    scheduler_arguments = user_data.get('scheduler_arguments', {})
-    if not scheduler_arguments:
-        # Загружаем из БД если нет в state
-        profile = await ensure_profile()
-        if profile:
-            scheduler_arguments = json.loads(profile[3]) if profile[3] else {}
-            state_updates['scheduler_arguments'] = scheduler_arguments
-    
     for key, values in scheduler_arguments.items():
-        logger.debug(f"Checking scheduled task: {key}, values: {values}, today: {now.strftime('%a').lower()[:3]}")
         if should_task_run_today(values, now):
-            # Парсим название задачи из ключа
             try:
                 task_text = normalize_preserve_case(key.split(' : ')[1]).replace('"', '').replace(' - ', '-')
-                logger.debug(f"Adding scheduled task for today: {task_text}")
                 tmp = task_text.split('-')
                 if len(tmp) >= 2:
-                    # Проверяем что второй элемент начинается с времени (ЧЧ:ММ)
                     time_part = tmp[1].split(' ')[0]
                     if ':' in time_part and len(time_part) == 5:
                         job_timing = time_part
-                        # Убираем время из названия задачи, оставляем только название и суффикс
                         task_name = tmp[0].strip()
-                        suffix_parts = tmp[1].split(' ')[1:]  # "каждый четверг"
+                        suffix_parts = tmp[1].split(' ')[1:]
                         task_display = f"{task_name} {' '.join(suffix_parts)}".strip()
                         if job_timing not in today_tasks:
                             today_tasks[job_timing] = task_display
@@ -454,51 +446,41 @@ async def tasks_pool_function(message, state: FSMContext):
                     if task_text not in today_tasks_not_time:
                         today_tasks_not_time.append(task_text)
             except (IndexError, AttributeError):
-                logger.debug(f"Could not parse scheduled task: {key}")
+                pass
 
-    # Обновляем закат
+    # Обновляем закат (асинхронно, не блокируя)
     sunrise = user_data.get('sunrise', None)
-    sunrise_outdated = sunrise != today_str
-    if sunrise_outdated:
-        # Удаляем все старые закаты перед добавлением нового
+    if sunrise != today_str:
         old_sunset_keys = [k for k, v in today_tasks.items() if v == 'закат ☀️']
         for key in old_sunset_keys:
             del today_tasks[key]
         
         try:
-            sunset_time = await get_sunset_minus_30()
+            sunset_time = await get_sunset_minus_30_safe()
             if sunset_time:
                 today_tasks[sunset_time.strftime("%H:%M")] = 'закат ☀️'
                 state_updates['sunrise'] = today_str
-            else:
-                logger.warning("Could not fetch sunset time, skipping sunset task")
         except Exception as e:
             logger.error(f"Error getting sunset time: {e}")
     
-    # Один вызов update_data вместо нескольких
+    # Один вызов update_data
     state_updates['today_tasks'] = today_tasks
     state_updates['today_tasks_not_time'] = today_tasks_not_time
     await state.update_data(**state_updates)
-    # Build the keyboard with the scheduled tasks and the available pool
+    
+    # Build keyboard
     keyboard = keyboard_builder(
         tasks_dict=today_tasks,
         tasks_list=today_tasks_not_time,
         grid=1,
-        chosen=today_tasks_chosen+today_tasks_not_time_chosen,
+        chosen=today_tasks_chosen + today_tasks_not_time_chosen,
         add_dell=True,
         last_button="🚀Отправить 🚀",
         add_save=True,
     )
-    if today_tasks:
-        await message.answer(
-            'Отметьте выполненные дела\nДля формирования расписания нажмите "Добавить"',
-            reply_markup=keyboard
-        )
-    else:
-        await message.answer(
-            'Ваш список дел пуст! Добавьте их нажав на кнопку "Добавить',
-            reply_markup=keyboard
-        )
+    
+    msg = 'Отметьте выполненные дела\nДля формирования расписания нажмите "Добавить"' if today_tasks else 'Ваш список дел пуст! Добавьте их нажав на кнопку "Добавить'
+    await message.answer(msg, reply_markup=keyboard)
     await state.set_state(ClientState.greet)
 
 async def scheduler_list(
@@ -561,34 +543,55 @@ async def scheduler_list(
 
 async def start(state: FSMContext, message: Message) -> None:
     user_data = await state.get_data()
-    data = user_data.copy()
-    answer = await create_profile(user_id=message.from_user.id)
-    if answer is not None:
-        (user_id, tasks_pool_json, one_time_tasks_json, scheduler_arguments, personal_records,
-            previous_diary, chosen_collected_data, notifications_data,
-         daily_tasks, daily_tasks_not_time) = (json.loads(answer[0]), json.loads(answer[1]), json.loads(answer[2]), \
-            json.loads(answer[3]), json.loads(answer[4]), answer[5], json.loads(answer[6]), json.loads(
-            answer[7]), json.loads(answer[8]), json.loads(answer[9]))  # Note: today_tasks is not used from db, daily_tasks is the source of truth
-
-        user_id_str = str(user_id)
-        tasks_pool = await get_tasks_pool(user_id_str)
-        if not tasks_pool:
-            tasks_pool = list(set(tasks_pool_json))
-        one_time_tasks = await get_one_time_tasks(user_id_str)
-        if not one_time_tasks:
-            one_time_tasks = one_time_tasks_json
-        # Фильтруем разовые дела из daily_tasks (они не должны там сохраняться)
+    user_id_str = str(message.from_user.id)
+    
+    # Получаем все данные пользователя одним оптимизированным запросом
+    db_data = await get_full_user_state(user_id_str)
+    
+    if db_data['profile'] is None:
+        # Создаём профиль если не существует
+        answer = await create_profile(user_id=message.from_user.id)
+        if answer is None:
+            await handle_new_user(message, state)
+            return
+        db_data = await get_full_user_state(user_id_str)
+    
+    if db_data['profile'] is not None:
+        profile = db_data['profile']
+        
+        # Парсим JSON поля из профиля
+        scheduler_arguments = json.loads(profile[3]) if profile[3] else {}
+        personal_records = json.loads(profile[4]) if profile[4] else {}
+        previous_diary = profile[5] or ''
+        chosen_collected_data = json.loads(profile[6]) if profile[6] else []
+        notifications_data = json.loads(profile[7]) if profile[7] else {}
+        
+        # Используем данные из отдельных таблиц (уже загружены)
+        tasks_pool = db_data['tasks_pool'] or list(set(json.loads(profile[1]) if profile[1] else []))
+        one_time_tasks = db_data['one_time_tasks'] or (json.loads(profile[2]) if profile[2] else [])
+        daily_tasks = db_data['daily_tasks'] or (json.loads(profile[8]) if profile[8] else {})
+        daily_tasks_not_time = db_data['daily_tasks_not_time'] or (json.loads(profile[9]) if profile[9] else [])
+        
+        # Фильтруем разовые дела из daily_tasks
         daily_tasks = {k: v for k, v in daily_tasks.items() if v not in one_time_tasks}
         daily_tasks_not_time = [t for t in daily_tasks_not_time if t not in one_time_tasks]
-        data['daily_tasks_not_time'] = daily_tasks_not_time
-        data['tasks_pool'] = list(set(tasks_pool))
-        data['daily_tasks'] = daily_tasks
-        data['one_time_tasks'] = one_time_tasks
-        data['scheduler_arguments'] = scheduler_arguments
+        
+        # Собираем все обновления state в один словарь
+        state_updates = {
+            'tasks_pool': list(set(tasks_pool)),
+            'one_time_tasks': one_time_tasks,
+            'daily_tasks': daily_tasks,
+            'daily_tasks_not_time': daily_tasks_not_time,
+            'scheduler_arguments': scheduler_arguments,
+            'previous_diary': previous_diary,
+            'notifications_data': notifications_data,
+            'chosen_collected_data': chosen_collected_data,
+        }
+        
         if personal_records:
-            data['personal_records'] = personal_records
-        data['previous_diary'] = previous_diary
-        data['notifications_data'] = notifications_data
+            state_updates['personal_records'] = personal_records
+        
+        # Настройка уведомлений
         if (notifications_data.get('chosen_notifications') == ['Включено'] 
             and 'hours' in notifications_data 
             and 'minutes' in notifications_data):
@@ -597,18 +600,18 @@ async def start(state: FSMContext, message: Message) -> None:
                 job.id == existing_job_id for job in scheduler.get_jobs()
             )
             if not job_exists:
-                hours = notifications_data['hours']
-                minutes = notifications_data['minutes']
                 job_id = scheduler.add_job(
                     tasks_pool_function,
                     trigger='cron',
-                    hour=hours,
-                    minute=minutes,
+                    hour=notifications_data['hours'],
+                    minute=notifications_data['minutes'],
                     args=(message, state))
-                data['job_id'] = job_id.id
+                state_updates['job_id'] = job_id.id
 
-        await state.update_data(**data)
+        # Один вызов update_data
+        await state.update_data(**state_updates)
 
+        user_id = json.loads(profile[0]) if profile[0] else message.from_user.id
         path = f"{user_id}_Diary.xlsx"
         if os.path.exists(path):
             keyboard = generate_keyboard(
@@ -616,13 +619,12 @@ async def start(state: FSMContext, message: Message) -> None:
                 first_button='Заполнить Дневник')
         else:
             keyboard = generate_keyboard(['Заполнить Дневник'], last_button='Настройки')
+        
         out_message = ''
         if personal_records:
             # Фильтруем рекорды — показываем только актуальные дела из tasks_pool
             filtered_records = {k: v for k, v in personal_records.items() if k in tasks_pool}
-            # Обновляем personal_records если были удалены неактуальные
             if filtered_records != personal_records:
-                data['personal_records'] = filtered_records
                 await state.update_data(personal_records=filtered_records)
                 await edit_database(personal_records=filtered_records, user_id=message.from_user.id)
             if filtered_records:
@@ -634,9 +636,16 @@ async def start(state: FSMContext, message: Message) -> None:
         else:
             await message.answer('Главное меню', reply_markup=keyboard)
 
-        await scheduler_in(data, state, message=message)
+        await scheduler_in(state_updates, state, message=message)
     else:
         await handle_new_user(message, state)
+
+
+async def close_db_pool():
+    """Закрывает пул соединений БД."""
+    from sqlite import _pool
+    if _pool:
+        await _pool.close()
 
 
 async def executing_scheduler_job(state: FSMContext, out_message: str) -> None:

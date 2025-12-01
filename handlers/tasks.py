@@ -12,7 +12,7 @@ from functions import (
 )
 from sqlite import (
     get_tasks_pool, replace_tasks_pool, get_one_time_tasks, 
-    replace_one_time_tasks, edit_database
+    replace_one_time_tasks, edit_database, batch_update_tasks
 )
 
 router = Router(name="tasks")
@@ -68,36 +68,37 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
         today_tasks_copy, daily_tasks_copy = today_tasks.copy(), daily_tasks.copy()
         today_tasks_chosen = user_data.get('today_tasks_chosen', [])
         today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
+        deleted_names = []
+        
         for name in edit_tasks_pool_chosen:
             if name in tasks_pool:
                 tasks_pool.remove(name)
+                deleted_names.append(name)
             if name in today_tasks.values():
-                for key in today_tasks.keys():
-                    if today_tasks[key] == name:
-                        if key in daily_chosen_tasks:
-                            daily_chosen_tasks.remove(key)
-                        if key in today_tasks_chosen:
-                            today_tasks_chosen.remove(key)
+                for key in list(today_tasks_copy.keys()):
+                    if today_tasks_copy.get(key) == name:
+                        daily_chosen_tasks = [k for k in daily_chosen_tasks if k != key]
+                        today_tasks_chosen = [k for k in today_tasks_chosen if k != key]
                         del today_tasks_copy[key]
             if name in today_tasks_not_time:
                 today_tasks_not_time.remove(name)
-            if name in today_tasks_not_time_chosen:
-                today_tasks_not_time_chosen.remove(name)
-            if name in daily_tasks_not_time_chosen:
-                daily_tasks_not_time_chosen.remove(name)
+            today_tasks_not_time_chosen = [t for t in today_tasks_not_time_chosen if t != name]
+            daily_tasks_not_time_chosen = [t for t in daily_tasks_not_time_chosen if t != name]
             if name in daily_tasks.values():
-                for key in daily_tasks.keys():
-                    if daily_tasks[key] == name:
-                        if key in daily_chosen_tasks:
-                            daily_chosen_tasks.remove(key)
+                for key in list(daily_tasks_copy.keys()):
+                    if daily_tasks_copy.get(key) == name:
+                        daily_chosen_tasks = [k for k in daily_chosen_tasks if k != key]
                         del daily_tasks_copy[key]
-            await call.message.answer(f'Вы удалили "{name}"')
 
-        keyboard = keyboard_builder(tasks_list=tasks_pool, add_dell=True, chosen=edit_tasks_pool_chosen)
-        daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
-        daily_tasks_not_time = [task for task in daily_tasks_not_time if task in tasks_pool]
+        if deleted_names:
+            await call.message.answer(f'Вы удалили: {", ".join(deleted_names)}')
+
+        daily_tasks_not_time = [task for task in user_data.get('daily_tasks_not_time', []) if task in tasks_pool]
         
-        await replace_tasks_pool(user_id, tasks_pool)
+        # Батч-обновление БД
+        await batch_update_tasks(user_id, tasks_pool=tasks_pool, daily_tasks=daily_tasks_copy,
+                                 daily_tasks_not_time=daily_tasks_not_time)
+        
         await state.update_data(
             tasks_pool=tasks_pool, daily_tasks=daily_tasks_copy, 
             daily_chosen_tasks=daily_chosen_tasks, today_tasks=today_tasks_copy, 
@@ -107,11 +108,8 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
             today_tasks_chosen=today_tasks_chosen,
             today_tasks_not_time_chosen=today_tasks_not_time_chosen
         )
-        await edit_database(
-            daily_tasks=daily_tasks_copy, 
-            daily_tasks_not_time=daily_tasks_not_time, 
-            user_id=call.from_user.id
-        )
+        
+        keyboard = keyboard_builder(tasks_list=tasks_pool, add_dell=True, chosen=[])
         try:
             await call.message.edit_reply_markup(reply_markup=keyboard)
         except TelegramBadRequest as exc:

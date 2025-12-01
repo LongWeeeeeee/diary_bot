@@ -51,6 +51,11 @@ async def shutdown(sig: signal.Signals = None):
     logger.info("Останавливаем планировщик...")
     scheduler.shutdown(wait=False)
     
+    logger.info("Закрываем пул соединений БД...")
+    from sqlite import _pool
+    if _pool:
+        await _pool.close()
+    
     logger.info("Закрываем сессию бота...")
     await bot.session.close()
     
