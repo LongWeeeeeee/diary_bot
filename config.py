@@ -4,8 +4,10 @@
 """
 import logging
 import os
+import time
 from datetime import datetime
-from typing import Any, Dict, Optional
+from functools import wraps
+from typing import Any, Callable, Dict, Optional
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher, types
@@ -16,6 +18,30 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import keys
 
 logger = logging.getLogger(__name__)
+
+# === Профилирование ===
+PROFILING_ENABLED = os.environ.get('BOT_PROFILING', '0') == '1'
+PROFILING_THRESHOLD_MS = 100  # Логировать только если > 100ms
+
+
+def timed(func: Callable) -> Callable:
+    """Декоратор для замера времени выполнения async функций."""
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        if not PROFILING_ENABLED:
+            return await func(*args, **kwargs)
+        
+        start = time.perf_counter()
+        try:
+            result = await func(*args, **kwargs)
+            return result
+        finally:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            if elapsed_ms > PROFILING_THRESHOLD_MS:
+                logger.warning(f"⏱️ SLOW: {func.__module__}.{func.__name__} took {elapsed_ms:.0f}ms")
+            else:
+                logger.debug(f"⏱️ {func.__name__}: {elapsed_ms:.0f}ms")
+    return wrapper
 
 # === Константы ===
 TARGET_TZ = ZoneInfo("Europe/Moscow")

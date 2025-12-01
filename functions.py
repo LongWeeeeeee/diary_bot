@@ -21,7 +21,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import (
     bot, scheduler, ClientState, TARGET_TZ, LAT, LNG,
     NEGATIVE_RESPONSES, WEEKDAY_TRANSLATE, remove_markup,
-    should_task_run_today
+    should_task_run_today, timed
 )
 from sqlite import (
     create_profile, edit_database, add_daily_log, get_last_logs, get_all_logs,
@@ -55,6 +55,7 @@ def _is_scheduled_task(task_name: str) -> bool:
 
 
 
+@timed
 async def add_day_to_excel(
     date: datetime,
     activities: List[str],
@@ -362,6 +363,7 @@ async def handle_new_user(message: Message, state: FSMContext) -> None:
     await state.set_state(ClientState.add_tasks_pool)
 
 
+@timed
 async def tasks_pool_function(message, state: FSMContext):
     """Показывает расписание на сегодня для заполнения дневника."""
     user_data = await state.get_data()
@@ -544,6 +546,7 @@ async def scheduler_list(
 
 
 
+@timed
 async def start(state: FSMContext, message: Message) -> None:
     user_data = await state.get_data()
     user_id_str = str(message.from_user.id)
@@ -763,6 +766,7 @@ def normalize_preserve_case(text: str) -> str:
     return re.sub(r',(?=\S)', ', ', text).strip().replace('ё', 'е')
 
 
+@timed
 async def diary_out(message: Message) -> None:
     logs = await get_last_logs(message.from_user.id)
     if not logs:
@@ -893,6 +897,7 @@ def _try_parse_sunset_string(s: str, assume_msk_when_naive: bool = True, date_fo
     return None
 
 
+@timed
 async def get_sunset_minus_30(
     lat: float = LAT,
     lng: float = LNG,

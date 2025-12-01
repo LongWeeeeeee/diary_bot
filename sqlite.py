@@ -9,6 +9,8 @@ from typing import Dict, List, Optional, TypeVar, Callable, Any
 
 import aiosqlite
 
+from config import timed
+
 logger = logging.getLogger(__name__)
 
 DB_PATH = 'daily_scores.db'
@@ -195,6 +197,7 @@ async def get_db():
         yield conn
 
 
+@timed
 async def get_user_data(user_id: str, include_today: bool = False) -> Optional[Dict]:
     """Получает все данные пользователя одним запросом.
     
@@ -315,6 +318,7 @@ async def database_start():
         await db.commit()
 
 
+@timed
 async def create_profile(user_id) -> Optional[tuple]:
     """Создаёт профиль пользователя или возвращает существующий."""
     user_id = str(user_id)  # Стандартизируем тип
@@ -704,6 +708,7 @@ async def get_all_logs(user_id) -> List[tuple]:
         return []
 
 
+@timed
 async def get_full_user_state(user_id: str) -> Dict:
     """Получает полное состояние пользователя для инициализации.
     
