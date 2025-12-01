@@ -126,6 +126,12 @@ async def main():
     try:
         scheduler.start()
         await database_start()
+        
+        # Восстанавливаем jobs уведомлений для всех пользователей
+        from functions import restore_notification_jobs
+        restored = await restore_notification_jobs(dp)
+        logger.info(f"Восстановлено {restored} уведомлений")
+        
         await dp.start_polling(bot)
     except (KeyboardInterrupt, SystemExit):
         logger.info("Получен сигнал завершения")

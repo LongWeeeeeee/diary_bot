@@ -26,7 +26,7 @@ from config import (
 from sqlite import (
     create_profile, edit_database, add_daily_log, get_last_logs, get_all_logs,
     get_tasks_pool, get_one_time_tasks, get_user_data, get_full_user_state,
-    parse_profile, ParsedProfile, batch_update_tasks
+    parse_profile, ParsedProfile, batch_update_tasks, get_users_with_notifications
 )
 
 ssl_ctx = ssl.create_default_context(cafile=certifi.where())
@@ -525,8 +525,11 @@ async def tasks_pool_function(message, state: FSMContext):
     )
     
     msg = 'Отметьте выполненные дела\nДля формирования расписания нажмите "Добавить"' if today_tasks else 'Ваш список дел пуст! Добавьте их нажав на кнопку "Добавить'
-    await message.answer(msg, reply_markup=keyboard)
-    await state.set_state(ClientState.greet)
+    try:
+        await message.answer(msg, reply_markup=keyboard)
+        await state.set_state(ClientState.greet)
+    except Exception as e:
+        logger.error(f"Failed to send notification to user {user_id_str}: {e}")
 
 async def scheduler_list(
     message_or_call: Union[Message, types.CallbackQuery],
@@ -684,6 +687,50 @@ async def close_db_pool():
     from sqlite import _pool
     if _pool:
         await _pool.close()
+
+
+async def restore_notification_jobs(dp) -> int:
+    """Восстанавливает jobs уведомлений для всех пользователей при старте бота."""
+    from handlers.common import MessageProxy
+    
+    users = await get_users_with_notifications()
+    restored = 0
+    
+    for user_info in users:
+        try:
+            user_id = int(user_info['user_id'])
+            hours = user_info['hours']
+            minutes = user_info['minutes']
+            
+            # Создаём MessageProxy для отправки сообщений
+            message_proxy = MessageProxy(chat_id=user_id, from_user=None, bot=bot)
+            message_proxy.from_user = type('User', (), {'id': user_id, 'full_name': 'User'})()
+            
+            # Получаем state для пользователя
+            state = dp.fsm.get_context(bot=bot, chat_id=user_id, user_id=user_id)
+            
+            # Сохраняем user_id в state
+            await state.update_data(user_id=user_id)
+            
+            # Создаём job
+            job_id = scheduler.add_job(
+                tasks_pool_function,
+                trigger='cron',
+                hour=hours,
+                minute=minutes,
+                args=(message_proxy, state)
+            )
+            
+            # Сохраняем job_id в state
+            await state.update_data(job_id=job_id.id)
+            
+            restored += 1
+            logger.info(f"Restored notification job for user {user_id} at {hours}:{minutes:02d}")
+        except Exception as e:
+            logger.error(f"Failed to restore job for user {user_info['user_id']}: {e}")
+    
+    logger.info(f"Restored {restored} notification jobs")
+    return restored
 
 
 async def executing_scheduler_job(state: FSMContext, out_message: str) -> None:

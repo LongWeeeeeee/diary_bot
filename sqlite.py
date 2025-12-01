@@ -754,3 +754,28 @@ async def get_full_user_state(user_id: str) -> Dict:
     
     return result
 
+
+
+async def get_users_with_notifications() -> List[Dict]:
+    """Получает всех пользователей с включёнными уведомлениями."""
+    result = []
+    async with get_db() as db:
+        async with db.execute("SELECT user_id, notifications_data FROM profile") as cursor:
+            rows = await cursor.fetchall()
+    
+    for row in rows:
+        try:
+            user_id = str(json.loads(row[0]) if row[0] else row[0])
+            notifications_data = json.loads(row[1]) if row[1] else {}
+            if (notifications_data.get('chosen_notifications') == ['Включено']
+                and 'hours' in notifications_data
+                and 'minutes' in notifications_data):
+                result.append({
+                    'user_id': user_id,
+                    'hours': notifications_data['hours'],
+                    'minutes': notifications_data['minutes']
+                })
+        except (json.JSONDecodeError, TypeError):
+            continue
+    
+    return result
