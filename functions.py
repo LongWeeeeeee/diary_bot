@@ -780,44 +780,83 @@ def normalize_preserve_case(text: str) -> str:
     return re.sub(r',(?=\S)', ', ', text).strip().replace('ё', 'е')
 
 
+def _get_rate_emoji(rate: int) -> str:
+    """Возвращает эмодзи в зависимости от оценки дня."""
+    if rate >= 9:
+        return "🌟"
+    elif rate >= 7:
+        return "😊"
+    elif rate >= 5:
+        return "😐"
+    elif rate >= 3:
+        return "😔"
+    else:
+        return "😢"
+
+
+def _get_weekday_ru(date_str: str) -> str:
+    """Возвращает день недели на русском."""
+    weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return weekdays[dt.weekday()]
+    except (TypeError, ValueError):
+        return ""
+
+
 @timed
 async def diary_out(message: Message) -> None:
-    logs = await get_last_logs(message.from_user.id)
+    logs = await get_last_logs(message.from_user.id, limit=7)
     if not logs:
-        await message.answer("Дневник еще не создан. Сначала заполните его!")
+        await message.answer("📔 Дневник пуст\n\nНачните вести записи через «Заполнить Дневник»")
         return
 
-    # Собираем все записи в один текст
-    lines = ["📅 Последние записи дневника:\n"]
+    lines = ["📔 <b>Ваш дневник</b>\n"]
     
     for log_date, activities, steps, sleep_quality, about_day, personal_rate in reversed(logs):
         try:
-            formatted_date = datetime.strptime(log_date, "%Y-%m-%d").strftime("%d.%m.%Y")
+            formatted_date = datetime.strptime(log_date, "%Y-%m-%d").strftime("%d.%m")
         except (TypeError, ValueError):
             formatted_date = log_date
-
-        steps_val = '-' if steps is None else int(steps) if steps == int(steps) else steps
-        sleep_val = '-' if sleep_quality is None else sleep_quality
-        rate_val = '-' if personal_rate is None else int(personal_rate)
         
-        # Компактный формат
-        entry = f"📆 {formatted_date} | ⭐ {rate_val}/10"
-        if steps_val != '-':
-            entry += f" | 👣 {steps_val}"
-        if sleep_val != '-':
-            entry += f" | 😴 {sleep_val}"
-        lines.append(entry)
+        weekday = _get_weekday_ru(log_date)
+        rate = int(personal_rate) if personal_rate is not None else 0
+        rate_emoji = _get_rate_emoji(rate)
         
+        # Заголовок дня
+        lines.append(f"{'─' * 20}")
+        lines.append(f"📅 <b>{formatted_date}</b> ({weekday})  {rate_emoji} <b>{rate}/10</b>")
+        
+        # Статистика
+        stats = []
+        if steps is not None and steps != 0:
+            steps_int = int(steps) if steps == int(steps) else steps
+            stats.append(f"👣 {steps_int:,}".replace(',', ' '))
+        if sleep_quality is not None and sleep_quality != 0:
+            stats.append(f"😴 {sleep_quality}")
+        if stats:
+            lines.append("   " + "  •  ".join(stats))
+        
+        # Дела
         if activities and activities != '-':
-            lines.append(f"   ✅ {activities[:100]}{'...' if len(activities) > 100 else ''}")
+            acts = activities.split(', ')
+            if len(acts) <= 5:
+                lines.append(f"   ✅ {', '.join(acts)}")
+            else:
+                lines.append(f"   ✅ {', '.join(acts[:5])} +{len(acts)-5}")
+        
+        # О дне (сокращённо)
         if about_day and about_day != '-':
-            lines.append(f"   💭 {about_day[:150]}{'...' if len(about_day) > 150 else ''}")
+            text = about_day[:120] + '...' if len(about_day) > 120 else about_day
+            lines.append(f"   💬 <i>{text}</i>")
+        
         lines.append("")
     
-    # Отправляем одним сообщением (или несколькими если > 4096)
+    lines.append(f"{'─' * 20}")
+    
     full_text = "\n".join(lines)
     for i in range(0, len(full_text), 4096):
-        await message.answer(full_text[i:i + 4096])
+        await message.answer(full_text[i:i + 4096], parse_mode="HTML")
 
 
 
