@@ -221,8 +221,12 @@ async def personal_rate_1(call, state, flag=False) -> None:
             
             daily_tasks = user_data.get('daily_tasks', {})
             daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
-            daily_tasks = {k: v for k, v in daily_tasks.items() if v not in used_one_time}
-            daily_tasks_not_time = [t for t in daily_tasks_not_time if t not in used_one_time]
+            tasks_pool_set = set(user_data.get('tasks_pool', []))
+            # Фильтруем: убираем использованные разовые и задачи не из tasks_pool
+            daily_tasks = {k: v for k, v in daily_tasks.items() 
+                          if v not in used_one_time and v in tasks_pool_set}
+            daily_tasks_not_time = [t for t in daily_tasks_not_time 
+                                   if t not in used_one_time and t in tasks_pool_set]
             
             db_profile_updates['daily_tasks'] = daily_tasks
             db_profile_updates['daily_tasks_not_time'] = daily_tasks_not_time

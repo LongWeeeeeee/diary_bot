@@ -589,9 +589,14 @@ async def start(state: FSMContext, message: Message) -> None:
         daily_tasks = db_data['daily_tasks'] or p.daily_tasks
         daily_tasks_not_time = db_data['daily_tasks_not_time'] or p.daily_tasks_not_time
         
-        # Фильтруем разовые дела из daily_tasks
-        daily_tasks = {k: v for k, v in daily_tasks.items() if v not in one_time_tasks}
-        daily_tasks_not_time = [t for t in daily_tasks_not_time if t not in one_time_tasks]
+        # Множество допустимых задач
+        valid_tasks = set(tasks_pool) | set(one_time_tasks)
+        
+        # Фильтруем daily_tasks - только задачи из tasks_pool/one_time_tasks, не разовые
+        daily_tasks = {k: v for k, v in daily_tasks.items() 
+                       if v not in one_time_tasks and v in valid_tasks}
+        daily_tasks_not_time = [t for t in daily_tasks_not_time 
+                                if t not in one_time_tasks and t in valid_tasks]
         
         # Собираем все обновления state в один словарь
         # Сохраняем user_id для использования в scheduler jobs

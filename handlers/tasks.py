@@ -92,7 +92,10 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
         if deleted_names:
             await call.message.answer(f'Вы удалили: {", ".join(deleted_names)}')
 
-        daily_tasks_not_time = [task for task in user_data.get('daily_tasks_not_time', []) if task in tasks_pool]
+        # Фильтруем daily_tasks - только задачи которые остались в tasks_pool
+        tasks_pool_set = set(tasks_pool)
+        daily_tasks_copy = {k: v for k, v in daily_tasks_copy.items() if v in tasks_pool_set}
+        daily_tasks_not_time = [task for task in user_data.get('daily_tasks_not_time', []) if task in tasks_pool_set]
         
         # Батч-обновление БД
         await batch_update_tasks(user_id, tasks_pool=tasks_pool, daily_tasks=daily_tasks_copy,
