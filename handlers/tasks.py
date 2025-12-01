@@ -254,16 +254,16 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
     elif data == 'Сохранить':
         # Загружаем актуальные one_time_tasks из БД
         current_one_time = await get_one_time_tasks(str(call.from_user.id))
+        tasks_pool_set = set(tasks_pool)
         
-        for key, value in today_tasks.copy().items():
-            # Не сохраняем задачи из scheduler и разовые дела
-            if value not in tasks_pool or _is_scheduled_task(value) or value in current_one_time:
-                del today_tasks[key]
-        daily_snapshot = today_tasks.copy()
-        # Фильтруем scheduled задачи и разовые дела из списка без времени
+        # Фильтруем: только задачи из tasks_pool, не scheduled, не разовые
+        daily_snapshot = {
+            k: v for k, v in today_tasks.items()
+            if v in tasks_pool_set and not _is_scheduled_task(v) and v not in current_one_time
+        }
         daily_not_time_snapshot = [
             task for task in today_tasks_not_time 
-            if not _is_scheduled_task(task) and task not in current_one_time
+            if task in tasks_pool_set and not _is_scheduled_task(task) and task not in current_one_time
         ]
         await state.update_data(daily_tasks=daily_snapshot, daily_tasks_not_time=daily_not_time_snapshot)
         await edit_database(

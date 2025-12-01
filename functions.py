@@ -384,10 +384,14 @@ async def tasks_pool_function(message, state: FSMContext):
         await state.set_state(ClientState.add_tasks_pool)
         return
     
-    # Фильтруем разовые дела из daily_tasks
-    daily_tasks = {k: v for k, v in daily_tasks.items() if v not in one_time_tasks}
+    # Множество допустимых задач (tasks_pool + one_time_tasks + scheduled)
+    valid_tasks = set(tasks_pool) | set(one_time_tasks)
+    
+    # Фильтруем разовые дела из daily_tasks и проверяем валидность
+    daily_tasks = {k: v for k, v in daily_tasks.items() 
+                   if v not in one_time_tasks and (v in valid_tasks or _is_scheduled_task(v) or v == 'закат ☀️')}
     daily_tasks_not_time = [t for t in daily_tasks_not_time 
-                            if not _is_scheduled_task(t) and t not in one_time_tasks]
+                            if not _is_scheduled_task(t) and t not in one_time_tasks and t in valid_tasks]
     state_updates['daily_tasks'] = daily_tasks
     state_updates['daily_tasks_not_time'] = daily_tasks_not_time
     
@@ -417,9 +421,11 @@ async def tasks_pool_function(message, state: FSMContext):
                 if task not in today_tasks_not_time:
                     today_tasks_not_time.append(task)
     
-    # ВСЕГДА фильтруем старые scheduled задачи перед добавлением актуальных
-    today_tasks = {k: v for k, v in today_tasks.items() if not _is_scheduled_task(v)}
-    today_tasks_not_time = [t for t in today_tasks_not_time if not _is_scheduled_task(t)]
+    # Фильтруем невалидные и старые scheduled задачи
+    today_tasks = {k: v for k, v in today_tasks.items() 
+                   if not _is_scheduled_task(v) and (v in valid_tasks or v == 'закат ☀️')}
+    today_tasks_not_time = [t for t in today_tasks_not_time 
+                           if not _is_scheduled_task(t) and t in valid_tasks]
     
     today_tasks_chosen = user_data.get('today_tasks_chosen', [])
     today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
