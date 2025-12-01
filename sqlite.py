@@ -664,6 +664,7 @@ async def remove_today_task_not_time(user_id: str, task_name: str):
 async def add_daily_log(user_id, date, activities, steps, sleep_quality, about_day, personal_rate):
     """Добавляет или обновляет запись о дне."""
     user_id = str(user_id)
+    logger.info(f"add_daily_log: user_id={user_id}, date={date}")
     try:
         async with get_db() as db:
             await db.execute(

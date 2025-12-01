@@ -189,8 +189,9 @@ async def personal_rate_1(call, state, flag=False) -> None:
     activities += list(daily_tasks_not_time_chosen)
     personal_rate = user_data.get('personal_rate', None)
     
+    # Всегда используем from_user из call, т.к. call.message.from_user — это бот
     if call.message:
-        message = call.message
+        message = MessageProxy(chat_id=call.message.chat.id, from_user=call.from_user, bot=bot)
     else:
         ctx = user_data.get('message_ctx', {})
         chat_id = ctx.get('chat_id', call.from_user.id)
