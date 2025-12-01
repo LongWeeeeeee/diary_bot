@@ -366,7 +366,10 @@ async def handle_new_user(message: Message, state: FSMContext) -> None:
 @timed
 async def tasks_pool_function(message, state: FSMContext):
     """Показывает расписание на сегодня для заполнения дневника."""
+    import time
+    t0 = time.perf_counter()
     user_data = await state.get_data()
+    t1 = time.perf_counter()
     user_id_str = str(message.from_user.id)
 
     # Собираем все данные для одного update_data в конце
@@ -388,8 +391,11 @@ async def tasks_pool_function(message, state: FSMContext):
     
     # Загружаем из БД только если данных нет в state
     need_db_load = not tasks_pool or is_new_day
+    t2 = time.perf_counter()
     if need_db_load:
         user_db_data = await get_user_data(user_id_str, include_today=not is_new_day)
+        t3 = time.perf_counter()
+        logger.debug(f"tasks_pool_function: get_data={int((t1-t0)*1000)}ms, get_user_data={int((t3-t2)*1000)}ms")
         if user_db_data:
             p = parse_profile(user_db_data['profile'])
             if not tasks_pool:
@@ -548,11 +554,16 @@ async def scheduler_list(
 
 @timed
 async def start(state: FSMContext, message: Message) -> None:
+    import time
+    t0 = time.perf_counter()
     user_data = await state.get_data()
+    t1 = time.perf_counter()
     user_id_str = str(message.from_user.id)
     
     # Получаем все данные пользователя одним оптимизированным запросом
     db_data = await get_full_user_state(user_id_str)
+    t2 = time.perf_counter()
+    logger.debug(f"start: get_data={int((t1-t0)*1000)}ms, get_full_user_state={int((t2-t1)*1000)}ms")
     
     if db_data['profile'] is None:
         # Создаём профиль если не существует
@@ -612,7 +623,10 @@ async def start(state: FSMContext, message: Message) -> None:
                 state_updates['job_id'] = job_id.id
 
         # Один вызов update_data
+        t3 = time.perf_counter()
         await state.update_data(**state_updates)
+        t4 = time.perf_counter()
+        logger.debug(f"start: update_data={int((t4-t3)*1000)}ms")
 
         user_id = p.user_id
         path = f"{user_id}_Diary.xlsx"
