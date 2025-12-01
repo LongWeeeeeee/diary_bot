@@ -807,6 +807,7 @@ def _get_weekday_ru(date_str: str) -> str:
 @timed
 async def diary_out(message: Message) -> None:
     logs = await get_last_logs(message.from_user.id, limit=7)
+    logger.info(f"diary_out: user_id={message.from_user.id}, logs_count={len(logs) if logs else 0}")
     if not logs:
         await message.answer("📔 Дневник пуст\n\nНачните вести записи через «Заполнить Дневник»")
         return
