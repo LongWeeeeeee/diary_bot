@@ -584,19 +584,25 @@ async def start(state: FSMContext, message: Message) -> None:
             return
         
         # Используем данные из отдельных таблиц или из профиля
-        tasks_pool = db_data['tasks_pool'] or list(set(p.tasks_pool))
-        one_time_tasks = db_data['one_time_tasks'] or p.one_time_tasks
-        daily_tasks = db_data['daily_tasks'] or p.daily_tasks
-        daily_tasks_not_time = db_data['daily_tasks_not_time'] or p.daily_tasks_not_time
+        tasks_pool = db_data['tasks_pool'] if db_data['tasks_pool'] else list(set(p.tasks_pool))
+        one_time_tasks = db_data['one_time_tasks'] if db_data['one_time_tasks'] else p.one_time_tasks
+        # Используем данные из таблиц если они есть, иначе из JSON профиля
+        daily_tasks_raw = db_data['daily_tasks'] if db_data['daily_tasks'] else p.daily_tasks
+        daily_tasks_not_time_raw = db_data['daily_tasks_not_time'] if db_data['daily_tasks_not_time'] else p.daily_tasks_not_time
         
         # Множество допустимых задач
         valid_tasks = set(tasks_pool) | set(one_time_tasks)
         
         # Фильтруем daily_tasks - только задачи из tasks_pool/one_time_tasks, не разовые
-        daily_tasks = {k: v for k, v in daily_tasks.items() 
+        daily_tasks = {k: v for k, v in daily_tasks_raw.items() 
                        if v not in one_time_tasks and v in valid_tasks}
-        daily_tasks_not_time = [t for t in daily_tasks_not_time 
+        daily_tasks_not_time = [t for t in daily_tasks_not_time_raw 
                                 if t not in one_time_tasks and t in valid_tasks]
+        
+        # Если данные изменились после фильтрации - сохраняем в БД
+        if daily_tasks != daily_tasks_raw or daily_tasks_not_time != daily_tasks_not_time_raw:
+            await edit_database(daily_tasks=daily_tasks, daily_tasks_not_time=daily_tasks_not_time, 
+                               user_id=message.from_user.id)
         
         # Собираем все обновления state в один словарь
         # Сохраняем user_id для использования в scheduler jobs
