@@ -347,6 +347,8 @@ def generate_unique_id_from_args(args_dict):
 
 
 async def handle_new_user(message: Message, state: FSMContext) -> None:
+    # Сохраняем user_id в state для использования в scheduler jobs
+    await state.update_data(user_id=message.from_user.id)
     info = await bot.get_me()
     try:
         await message.answer_sticker('CAACAgIAAxkBAAIsZGVY5wgzBq6lUUSgcSYTt99JnOBbAAIIAAPANk8Tb2wmC94am2kzBA')
@@ -370,7 +372,8 @@ async def tasks_pool_function(message, state: FSMContext):
     t0 = time.perf_counter()
     user_data = await state.get_data()
     t1 = time.perf_counter()
-    user_id_str = str(message.from_user.id)
+    # Используем user_id из state если есть (для scheduler jobs), иначе из message
+    user_id_str = str(user_data.get('user_id') or message.from_user.id)
 
     # Собираем все данные для одного update_data в конце
     state_updates = {}
@@ -591,7 +594,9 @@ async def start(state: FSMContext, message: Message) -> None:
         daily_tasks_not_time = [t for t in daily_tasks_not_time if t not in one_time_tasks]
         
         # Собираем все обновления state в один словарь
+        # Сохраняем user_id для использования в scheduler jobs
         state_updates = {
+            'user_id': message.from_user.id,
             'tasks_pool': list(set(tasks_pool)),
             'one_time_tasks': one_time_tasks,
             'daily_tasks': daily_tasks,

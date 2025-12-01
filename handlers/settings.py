@@ -152,7 +152,8 @@ async def notifications_proceed(call, state):
     
     if data == 0:
         # Переключение вкл/выкл
-        state_updates = {}
+        # Сохраняем user_id для использования в scheduler jobs
+        state_updates = {'user_id': call.from_user.id}
         chosen_notifications = notifications_data.get('chosen_notifications', [])
         if 'Включено' in chosen_notifications:
             notifications_data['chosen_notifications'] = []
@@ -225,7 +226,8 @@ async def notification_set_date(message, state):
     notifications_data['hours'] = hours
     notifications_data['minutes'] = minutes
     await edit_database(notifications_data=notifications_data, user_id=message.from_user.id)
-    await state.update_data(notifications_data=notifications_data)
+    # Сохраняем user_id для использования в scheduler jobs
+    await state.update_data(notifications_data=notifications_data, user_id=message.from_user.id)
     
     job_id = user_data.get('job_id', '')
     if job_id:

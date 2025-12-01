@@ -127,6 +127,8 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
             user_data.pop('scheduler_arguments', None)
             user_data.pop('date_jobs_keys', None)
             user_data.pop('date_jobs_display', None)
+            # Убеждаемся что user_id сохраняется
+            user_data['user_id'] = call.from_user.id
             new_ot_builder = InlineKeyboardBuilder()
             new_ot_builder.button(text="💼Добавить 💼", callback_data="Добавить")
             try:
@@ -294,7 +296,10 @@ async def date_jobs_week(call: types.CallbackQuery, state: FSMContext) -> None:
             out_message = f'Я напомню вам "{new_date_jobs}":{all_days}'
             await call.message.answer(out_message)
             await state.update_data(date_jobs_week_chosen_tasks=[])
-            await start(message=call.message, state=state)
+            # Используем MessageProxy с правильным from_user
+            from .common import MessageProxy
+            message_proxy = MessageProxy(chat_id=call.message.chat.id, from_user=call.from_user, bot=bot)
+            await start(message=message_proxy, state=state)
     else:
         try:
             idx = int(data)
