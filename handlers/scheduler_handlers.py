@@ -32,6 +32,10 @@ def scheduler_display(key: str) -> str:
         # Убираем "в 00:00" из конца для разовых дел
         if text.endswith(' в 00:00'):
             text = text[:-8]
+        # Убираем "каждый/каждую/каждое" для экономии места
+        text = text.replace(' каждый ', ' ')
+        text = text.replace(' каждую ', ' ')
+        text = text.replace(' каждое ', ' ')
         return text
     except IndexError:
         return key
