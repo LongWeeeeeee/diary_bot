@@ -851,10 +851,9 @@ async def diary_out(message: Message) -> None:
             else:
                 lines.append(f"   ✅ {', '.join(acts[:5])} +{len(acts)-5}")
         
-        # О дне (сокращённо)
+        # О дне (полный текст)
         if about_day and about_day != '-':
-            text = about_day[:120] + '...' if len(about_day) > 120 else about_day
-            lines.append(f"   💬 <i>{text}</i>")
+            lines.append(f"   💬 <i>{about_day}</i>")
         
         lines.append("")
     

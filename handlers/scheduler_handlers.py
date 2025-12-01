@@ -25,16 +25,30 @@ from sqlite import create_profile, edit_database
 router = Router(name="scheduler")
 
 
-def scheduler_display(key: str) -> str:
-    """Извлекает отображаемое название задачи из ключа, убирая служебное время."""
+def scheduler_display(key: str, max_len: int = 35) -> str:
+    """Извлекает отображаемое название задачи из ключа, сокращая для мобильных экранов."""
     try:
         text = key.split('Я напомню вам : ')[1].replace('"', '')
         # Убираем "в 00:00" из конца для разовых дел
         if text.endswith(' в 00:00'):
             text = text[:-8]
+        
+        # Сокращаем если текст слишком длинный
+        if len(text) > max_len:
+            # Убираем "каждый/каждую/каждое" для экономии места
+            text = text.replace(' каждый ', ' ')
+            text = text.replace(' каждую ', ' ')
+            text = text.replace(' каждое ', ' ')
+            # Убираем " - " и заменяем на короткое тире
+            text = text.replace(' - ', '-')
+        
+        # Если всё ещё длинный - обрезаем
+        if len(text) > max_len:
+            text = text[:max_len-2] + '..'
+        
         return text
     except IndexError:
-        return key
+        return key[:max_len] if len(key) > max_len else key
 
 
 # Все состояния настроек для навигации между пунктами
