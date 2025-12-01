@@ -37,11 +37,17 @@ def scheduler_display(key: str) -> str:
         return key
 
 
-@router.message(lambda message: message.text and message.text.lower() == 'в определенную дату', StateFilter(
+# Все состояния настроек для навигации между пунктами
+SETTINGS_STATES = (
     ClientState.settings, ClientState.collected_data, ClientState.notification_proceed, 
     ClientState.notification_set_date, ClientState.edit_tasks_pool, ClientState.one_time_tasks_2,
-    ClientState.one_time_tasks_3, ClientState.date_jobs, ClientState.date_jobs_1, ClientState.date_jobs_2
-))
+    ClientState.one_time_tasks_3, ClientState.date_jobs, ClientState.date_jobs_1, ClientState.date_jobs_2,
+    ClientState.date_jobs_week, ClientState.date_jobs_month, ClientState.date_jobs_year, ClientState.date_jobs_once,
+    ClientState.add_tasks_pool
+)
+
+
+@router.message(lambda message: message.text and message.text.lower() == 'в определенную дату', StateFilter(*SETTINGS_STATES))
 async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
     """Меню дел в определенную дату."""
     user_data = await state.get_data()

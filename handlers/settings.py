@@ -46,11 +46,17 @@ async def my_records(message: Message, state: FSMContext) -> None:
         await start(message=message, state=state)
 
 
-@router.message(lambda message: message.text and message.text.lower() == 'опрашиваемые данные', StateFilter(
+# Все состояния настроек для навигации между пунктами
+SETTINGS_STATES = (
     ClientState.settings, ClientState.collected_data, ClientState.notification_proceed, 
     ClientState.notification_set_date, ClientState.edit_tasks_pool, ClientState.one_time_tasks_2,
-    ClientState.one_time_tasks_3, ClientState.date_jobs, ClientState.date_jobs_1, ClientState.date_jobs_2
-))
+    ClientState.one_time_tasks_3, ClientState.date_jobs, ClientState.date_jobs_1, ClientState.date_jobs_2,
+    ClientState.date_jobs_week, ClientState.date_jobs_month, ClientState.date_jobs_year, ClientState.date_jobs_once,
+    ClientState.add_tasks_pool
+)
+
+
+@router.message(lambda message: message.text and message.text.lower() == 'опрашиваемые данные', StateFilter(*SETTINGS_STATES))
 async def collected_data(message: Message, state: FSMContext) -> None:
     """Настройка опрашиваемых данных (шаги, сон)."""
     user_data = await state.get_data()
@@ -99,11 +105,7 @@ async def collected_data_proceed(call, state):
     )
 
 
-@router.message(lambda message: message.text and message.text.lower() == 'напоминания', StateFilter(
-    ClientState.settings, ClientState.collected_data, ClientState.notification_proceed, 
-    ClientState.notification_set_date, ClientState.edit_tasks_pool, ClientState.one_time_tasks_2,
-    ClientState.one_time_tasks_3, ClientState.date_jobs, ClientState.date_jobs_1, ClientState.date_jobs_2
-))
+@router.message(lambda message: message.text and message.text.lower() == 'напоминания', StateFilter(*SETTINGS_STATES))
 async def notifications(message: Message, state: FSMContext) -> None:
     """Настройка ежедневных напоминаний."""
     user_data = await state.get_data()

@@ -46,9 +46,17 @@ async def reset_state(message: Message, state: FSMContext) -> None:
     await message.answer('Состояние сброшено. Напишите что-нибудь для начала.')
 
 
-@router.message(lambda message: message.text)
+@router.message(lambda message: message.text, StateFilter(
+    None,  # Без состояния
+    ClientState.greet,
+    ClientState.personal_rate_1,
+    ClientState.steps,
+    ClientState.total_sleep,
+    ClientState.about_day,
+    ClientState.personal_rate
+))
 async def handle_message(message: Message, state: FSMContext):
-    """Fallback handler для любых текстовых сообщений."""
+    """Fallback handler для любых текстовых сообщений (кроме настроек)."""
     await start(message=message, state=state)
 
 

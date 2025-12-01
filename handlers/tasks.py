@@ -18,11 +18,17 @@ from sqlite import (
 router = Router(name="tasks")
 
 
-@router.message(lambda message: message.text and message.text.lower() == 'список дел', StateFilter(
+# Все состояния настроек для навигации между пунктами
+SETTINGS_STATES = (
     ClientState.settings, ClientState.collected_data, ClientState.notification_proceed, 
     ClientState.notification_set_date, ClientState.edit_tasks_pool, ClientState.one_time_tasks_2,
-    ClientState.one_time_tasks_3, ClientState.date_jobs, ClientState.date_jobs_1, ClientState.date_jobs_2
-))
+    ClientState.one_time_tasks_3, ClientState.date_jobs, ClientState.date_jobs_1, ClientState.date_jobs_2,
+    ClientState.date_jobs_week, ClientState.date_jobs_month, ClientState.date_jobs_year, ClientState.date_jobs_once,
+    ClientState.add_tasks_pool
+)
+
+
+@router.message(lambda message: message.text and message.text.lower() == 'список дел', StateFilter(*SETTINGS_STATES))
 async def edit_tasks_pool_handler(message: Message, state: FSMContext):
     """Редактирование общего списка дел."""
     user_data = await state.get_data()
@@ -427,11 +433,7 @@ async def new_today_tasks(message: Message, state: FSMContext) -> None:
         await message.answer('Введите правильное время в формате часы:минуты')
 
 
-@router.message(lambda message: message.text and message.text.lower() == 'разовые дела', StateFilter(
-    ClientState.settings, ClientState.collected_data, ClientState.notification_proceed, 
-    ClientState.notification_set_date, ClientState.edit_tasks_pool, ClientState.one_time_tasks_2,
-    ClientState.one_time_tasks_3, ClientState.date_jobs, ClientState.date_jobs_1, ClientState.date_jobs_2
-))
+@router.message(lambda message: message.text and message.text.lower() == 'разовые дела', StateFilter(*SETTINGS_STATES))
 async def change_one_time_tasks(message: Message, state: FSMContext) -> None:
     """Управление разовыми делами."""
     user_data = await state.get_data()
