@@ -26,7 +26,7 @@ from config import (
 from sqlite import (
     create_profile, edit_database, add_daily_log, get_last_logs, get_all_logs,
     get_tasks_pool, get_one_time_tasks, get_user_data, get_full_user_state,
-    parse_profile, ParsedProfile
+    parse_profile, ParsedProfile, batch_update_tasks
 )
 
 ssl_ctx = ssl.create_default_context(cafile=certifi.where())
@@ -409,8 +409,11 @@ async def tasks_pool_function(message, state: FSMContext):
             state_updates['one_time_tasks'] = one_time_tasks
             
             if p:
-                daily_tasks = p.daily_tasks
-                daily_tasks_not_time = p.daily_tasks_not_time
+                # Используем daily_tasks из state если есть, иначе из профиля
+                if not daily_tasks:
+                    daily_tasks = p.daily_tasks
+                if not daily_tasks_not_time:
+                    daily_tasks_not_time = p.daily_tasks_not_time
                 if not scheduler_arguments:
                     scheduler_arguments = p.scheduler_arguments
                     state_updates['scheduler_arguments'] = scheduler_arguments
@@ -599,10 +602,12 @@ async def start(state: FSMContext, message: Message) -> None:
         daily_tasks_not_time = [t for t in daily_tasks_not_time_raw 
                                 if t not in one_time_tasks and t in valid_tasks]
         
-        # Если данные изменились после фильтрации - сохраняем в БД
+        # Если данные изменились после фильтрации - сохраняем в БД (обе таблицы)
         if daily_tasks != daily_tasks_raw or daily_tasks_not_time != daily_tasks_not_time_raw:
             await edit_database(daily_tasks=daily_tasks, daily_tasks_not_time=daily_tasks_not_time, 
                                user_id=message.from_user.id)
+            await batch_update_tasks(user_id_str, daily_tasks=daily_tasks, 
+                                    daily_tasks_not_time=daily_tasks_not_time)
         
         # Собираем все обновления state в один словарь
         # Сохраняем user_id для использования в scheduler jobs

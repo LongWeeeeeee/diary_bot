@@ -268,10 +268,16 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
             if task in tasks_pool_set and not _is_scheduled_task(task) and task not in current_one_time
         ]
         await state.update_data(daily_tasks=daily_snapshot, daily_tasks_not_time=daily_not_time_snapshot)
+        # Сохраняем в обе таблицы для синхронизации
         await edit_database(
             daily_tasks=daily_snapshot, 
             daily_tasks_not_time=daily_not_time_snapshot, 
             user_id=call.from_user.id
+        )
+        await batch_update_tasks(
+            str(call.from_user.id),
+            daily_tasks=daily_snapshot,
+            daily_tasks_not_time=daily_not_time_snapshot
         )
         await call.message.answer('Расписание на день сохранено!')
 
