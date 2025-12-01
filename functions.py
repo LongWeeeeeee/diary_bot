@@ -190,6 +190,48 @@ def counter_positive(current_word, column):
     return count
 
 
+def _parse_job_datetime(values: dict, field: str, fallback_fmt: str) -> Optional[datetime]:
+    """Парсит datetime из значений job."""
+    val = values.get(field)
+    if not val:
+        return None
+    if isinstance(val, datetime):
+        dt_val = val
+    elif isinstance(val, str):
+        try:
+            dt_val = datetime.fromisoformat(val)
+        except Exception:
+            try:
+                dt_val = datetime.strptime(val, fallback_fmt)
+            except Exception:
+                return None
+    else:
+        return None
+    if dt_val.tzinfo is None:
+        dt_val = dt_val.replace(tzinfo=TARGET_TZ)
+    return dt_val
+
+
+def _prepare_job_values(values: dict, state: FSMContext, key: str) -> dict:
+    """Подготавливает значения для добавления job в scheduler."""
+    values_copy = values.copy()
+    values_copy['args'] = (state, key)
+    
+    if 'date' in values_copy:
+        dt_val = _parse_job_datetime(values, 'date', '%Y-%m-%d')
+        if dt_val:
+            values_copy['date'] = dt_val
+    elif 'run_date' in values_copy:
+        dt_val = _parse_job_datetime(values, 'run_date', '%Y-%m-%d %H:%M')
+        if dt_val:
+            values_copy['run_date'] = dt_val
+    
+    if 'day_of_week' in values_copy and isinstance(values_copy['day_of_week'], list):
+        values_copy['day_of_week'] = values_copy['day_of_week'][0]
+    
+    return values_copy
+
+
 async def scheduler_in(data, state, message):
     scheduler_arguments = data.get('scheduler_arguments', {})
     if not scheduler_arguments:
@@ -200,41 +242,23 @@ async def scheduler_in(data, state, message):
     current_date = datetime.now(TARGET_TZ)
     expired_keys = []
     
-    # Один вызов update_data в начале
     await state.update_data(user_id=message.from_user.id)
     
     for key, values in scheduler_arguments.items():
-        values_copy = values.copy()
-        values_copy['args'] = (state, key)
-        
-        # Обработка дат
-        if 'date' in values_copy:
-            try:
-                dt_val = datetime.fromisoformat(values['date']) if isinstance(values['date'], str) else values['date']
-            except Exception:
-                dt_val = datetime.strptime(values['date'], '%Y-%m-%d')
-            if dt_val.tzinfo is None:
-                dt_val = dt_val.replace(tzinfo=TARGET_TZ)
-            values_copy['date'] = dt_val
-        elif 'run_date' in values_copy:
-            try:
-                dt_val = datetime.fromisoformat(values['run_date']) if isinstance(values['run_date'], str) else values['run_date']
-            except Exception:
-                dt_val = datetime.strptime(values['run_date'], '%Y-%m-%d %H:%M')
-            if dt_val.tzinfo is None:
-                dt_val = dt_val.replace(tzinfo=TARGET_TZ)
-            values_copy['run_date'] = dt_val
-            
-            if current_date > (dt_val + timedelta(minutes=1)):
+        # Проверяем просроченные run_date задачи
+        if 'run_date' in values:
+            dt_val = _parse_job_datetime(values, 'run_date', '%Y-%m-%d %H:%M')
+            if dt_val and current_date > (dt_val + timedelta(minutes=1)):
                 expired_keys.append(key)
                 continue
         
+        values_copy = _prepare_job_values(values, state, key)
         unique_id = generate_unique_id_from_args(values_copy)
+        
         if unique_id not in existing_job_ids:
             values_copy['id'] = unique_id
-            if 'day_of_week' in values_copy and isinstance(values_copy['day_of_week'], list):
-                values_copy['day_of_week'] = values_copy['day_of_week'][0]
             scheduler.add_job(executing_scheduler_job, **values_copy)
+            existing_job_ids.add(unique_id)  # Добавляем в кэш чтобы не дублировать
     
     # Удаляем просроченные задачи
     if expired_keys:
@@ -509,39 +533,11 @@ async def scheduler_list(
     await state.update_data(scheduler_arguments=scheduler_arguments, user_id=actor_id)
 
     # 2) Немедленно добавляем job в APScheduler (без ожидания рестарта)
-    values_copy = scheduler_arguments[out_message].copy()
-    values_copy['args'] = (state, out_message)
-
-    # Normalize date/run_date inputs
-    if 'date' in values_copy and isinstance(values_copy['date'], str):
-        try:
-            values_copy['date'] = datetime.fromisoformat(values_copy['date'])
-        except Exception:
-            try:
-                values_copy['date'] = datetime.strptime(values_copy['date'], '%Y-%m-%d')
-            except Exception:
-                pass
-        # Ensure timezone is set for date field
-        if isinstance(values_copy['date'], datetime) and values_copy['date'].tzinfo is None:
-            values_copy['date'] = values_copy['date'].replace(tzinfo=TARGET_TZ)
-    if 'run_date' in values_copy:
-        rd = values_copy['run_date']
-        if isinstance(rd, str):
-            try:
-                values_copy['run_date'] = datetime.fromisoformat(rd)
-            except Exception:
-                try:
-                    values_copy['run_date'] = datetime.strptime(rd, '%Y-%m-%d %H:%M')
-                except Exception:
-                    pass
-        if isinstance(values_copy['run_date'], datetime) and values_copy['run_date'].tzinfo is None:
-            values_copy['run_date'] = values_copy['run_date'].replace(tzinfo=TARGET_TZ)
-
-    if 'day_of_week' in values_copy and isinstance(values_copy['day_of_week'], list):
-        values_copy['day_of_week'] = values_copy['day_of_week'][0]
-
+    values_copy = _prepare_job_values(scheduler_arguments[out_message], state, out_message)
     unique_id = generate_unique_id_from_args(values_copy)
-    if not any(job.id == unique_id for job in scheduler.get_jobs()):
+    
+    existing_job_ids = {job.id for job in scheduler.get_jobs()}
+    if unique_id not in existing_job_ids:
         values_copy['id'] = unique_id
         scheduler.add_job(executing_scheduler_job, **values_copy)
     # Задачи добавятся в расписание при открытии "Заполнить дневник"
