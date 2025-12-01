@@ -70,10 +70,10 @@ async def collected_data(message: Message, state: FSMContext) -> None:
     )
     settings_buttons = ['Напоминания', 'В определенную дату', 'Опрашиваемые данные', 'Список дел', 'Разовые дела']
     await message.answer(
-        reply_markup=generate_keyboard(settings_buttons, last_button='В Главное Меню'), 
-        text='Зеленая галочка означает что настройки будут работать, серая - что выключены'
+        text='Опциональные опросы\n\nЗеленая галочка - включено, серая - выключено',
+        reply_markup=keyboard
     )
-    await message.answer('Выберите опцию', reply_markup=keyboard)
+    await message.answer('Выберите раздел', reply_markup=generate_keyboard(settings_buttons, last_button='В Главное Меню'))
     await state.set_state(ClientState.collected_data)
 
 
