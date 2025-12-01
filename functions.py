@@ -383,7 +383,8 @@ async def tasks_pool_function(message, state: FSMContext):
     
     # Проверяем, изменился ли день с последнего открытия расписания
     last_tasks_date = user_data.get('today_tasks_date', None)
-    is_new_day = last_tasks_date != today_str
+    # Новый день только если дата явно отличается (не None)
+    is_new_day = last_tasks_date is not None and last_tasks_date != today_str
     
     # Получаем данные из state или БД
     tasks_pool = user_data.get('tasks_pool', [])
@@ -439,13 +440,16 @@ async def tasks_pool_function(message, state: FSMContext):
     
     # Если новый день - сбрасываем today_tasks до daily_tasks
     if is_new_day:
-        logger.info(f"New day detected ({last_tasks_date} -> {today_str}), resetting today_tasks")
+        logger.info(f"New day detected ({last_tasks_date} -> {today_str}), resetting today_tasks for user {user_id_str}")
         today_tasks = {k: v for k, v in daily_tasks.items() if not _is_scheduled_task(v)}
         today_tasks_not_time = [t for t in daily_tasks_not_time if not _is_scheduled_task(t)]
         state_updates['today_tasks_date'] = today_str
         state_updates['today_tasks_chosen'] = []
         state_updates['today_tasks_not_time_chosen'] = []
     else:
+        # Сохраняем дату если её не было
+        if last_tasks_date is None:
+            state_updates['today_tasks_date'] = today_str
         # Восстанавливаем расписание из daily_*, если оно отсутствует
         if not today_tasks:
             today_tasks = daily_tasks.copy()
