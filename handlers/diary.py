@@ -201,32 +201,36 @@ async def personal_rate_1(call, state, flag=False) -> None:
     db_profile_updates = {}
     batch_tasks_updates = {}
     
-    # Удаляем только те разовые дела, которые были в расписании на сегодня
+    # Удаляем только ВЫПОЛНЕННЫЕ разовые дела (отмеченные в chosen)
     if one_time_tasks:
-        used_one_time = set()
-        for task_name in today_tasks.values():
-            if task_name in one_time_tasks:
-                used_one_time.add(task_name)
-        for task in today_tasks_not_time:
+        completed_one_time = set()
+        # Проверяем выполненные дела с временем
+        for time_key in today_tasks_chosen:
+            task_name = today_tasks.get(time_key)
+            if task_name and task_name in one_time_tasks:
+                completed_one_time.add(task_name)
+        # Проверяем выполненные дела без времени
+        for task in daily_tasks_not_time_chosen:
             if task in one_time_tasks:
-                used_one_time.add(task)
+                completed_one_time.add(task)
         
-        if used_one_time:
-            logging.info(f"Removing used one_time_tasks: {used_one_time}")
-            remaining_one_time = [t for t in one_time_tasks if t not in used_one_time]
+        if completed_one_time:
+            logging.info(f"Removing completed one_time_tasks: {completed_one_time}")
+            remaining_one_time = [t for t in one_time_tasks if t not in completed_one_time]
             batch_tasks_updates['one_time_tasks'] = remaining_one_time
             
-            today_tasks = {k: v for k, v in today_tasks.items() if v not in used_one_time}
-            today_tasks_not_time = [t for t in today_tasks_not_time if t not in used_one_time]
+            # Убираем выполненные разовые дела из today_tasks
+            today_tasks = {k: v for k, v in today_tasks.items() if v not in completed_one_time}
+            today_tasks_not_time = [t for t in today_tasks_not_time if t not in completed_one_time]
             
             daily_tasks = user_data.get('daily_tasks', {})
             daily_tasks_not_time = user_data.get('daily_tasks_not_time', [])
             tasks_pool_set = set(user_data.get('tasks_pool', []))
-            # Фильтруем: убираем использованные разовые и задачи не из tasks_pool
+            # Фильтруем: убираем выполненные разовые и задачи не из tasks_pool
             daily_tasks = {k: v for k, v in daily_tasks.items() 
-                          if v not in used_one_time and v in tasks_pool_set}
+                          if v not in completed_one_time and v in tasks_pool_set}
             daily_tasks_not_time = [t for t in daily_tasks_not_time 
-                                   if t not in used_one_time and t in tasks_pool_set]
+                                   if t not in completed_one_time and t in tasks_pool_set]
             
             db_profile_updates['daily_tasks'] = daily_tasks
             db_profile_updates['daily_tasks_not_time'] = daily_tasks_not_time
