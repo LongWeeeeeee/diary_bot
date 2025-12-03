@@ -132,7 +132,19 @@ async def main():
         restored = await restore_notification_jobs(dp)
         logger.info(f"Восстановлено {restored} уведомлений")
         
-        await dp.start_polling(bot)
+        # Polling с автоматическим переподключением
+        while True:
+            try:
+                await dp.start_polling(
+                    bot,
+                    polling_timeout=30,
+                    handle_signals=False,
+                    close_bot_session=False
+                )
+                break  # Нормальное завершение
+            except Exception as e:
+                logger.error(f"Polling error: {e}, reconnecting in 5s...")
+                await asyncio.sleep(5)
     except (KeyboardInterrupt, SystemExit):
         logger.info("Получен сигнал завершения")
     finally:
