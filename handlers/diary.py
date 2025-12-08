@@ -267,12 +267,18 @@ async def personal_rate_1(call, state, flag=False) -> None:
         except Exception as e:
             logging.debug(f"Could not delete previous diary message: {e}")
     
+    # Получаем текущую дату для отметки отправки дневника
+    from datetime import datetime as dt_now
+    from zoneinfo import ZoneInfo
+    current_date_str = dt_now.now(ZoneInfo("Europe/Moscow")).strftime("%Y-%m-%d")
+    
     # Один вызов update_data для сброса состояния
     await state.update_data(
         today_tasks_chosen=[], today_tasks_not_time_chosen=[], 
         one_time_chosen_tasks=[], session_accrued_tasks=[],
         today_tasks={}, today_tasks_not_time=[], sunrise=None,
         today_tasks_date=None,
+        diary_submitted_date=current_date_str,  # Отмечаем что дневник отправлен за эту дату
         one_time_tasks=batch_tasks_updates.get('one_time_tasks', one_time_tasks),
         daily_tasks=db_profile_updates.get('daily_tasks', user_data.get('daily_tasks', {})),
         daily_tasks_not_time=db_profile_updates.get('daily_tasks_not_time', user_data.get('daily_tasks_not_time', []))

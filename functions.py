@@ -383,8 +383,18 @@ async def tasks_pool_function(message, state: FSMContext):
     
     # Проверяем, изменился ли день с последнего открытия расписания
     last_tasks_date = user_data.get('today_tasks_date', None)
-    # Новый день только если дата явно отличается (не None)
-    is_new_day = last_tasks_date is not None and last_tasks_date != today_str
+    # Проверяем, был ли дневник уже отправлен за текущую сессию
+    diary_submitted_date = user_data.get('diary_submitted_date', None)
+    
+    # Новый день только если:
+    # 1. Дата явно отличается (не None)
+    # 2. И дневник был отправлен за предыдущий день (или это первый запуск после смены дня)
+    # Это предотвращает сброс выбранных дел при работе после полуночи
+    is_new_day = (
+        last_tasks_date is not None 
+        and last_tasks_date != today_str
+        and (diary_submitted_date == last_tasks_date or diary_submitted_date is None)
+    )
     
     # Получаем данные из state или БД
     tasks_pool = user_data.get('tasks_pool', [])
@@ -450,11 +460,12 @@ async def tasks_pool_function(message, state: FSMContext):
         state_updates['today_tasks_date'] = today_str
         state_updates['today_tasks_chosen'] = []
         state_updates['today_tasks_not_time_chosen'] = []
+        state_updates['diary_submitted_date'] = None  # Сбрасываем флаг отправки дневника для нового дня
     else:
-        # Сохраняем дату если её не было
-        if last_tasks_date is None:
+        # Сохраняем/обновляем дату
+        if last_tasks_date is None or last_tasks_date != today_str:
             state_updates['today_tasks_date'] = today_str
-            # Первое открытие - добавляем разовые дела
+            # Первое открытие или продолжение работы после полуночи - добавляем разовые дела если их нет
             for task in one_time_tasks:
                 if task not in today_tasks_not_time and task not in today_tasks.values():
                     today_tasks_not_time.append(task)
@@ -482,12 +493,27 @@ async def tasks_pool_function(message, state: FSMContext):
     today_tasks_not_time = [t for t in today_tasks_not_time 
                            if not _is_scheduled_task(t) and t in valid_tasks]
     
-    today_tasks_chosen = user_data.get('today_tasks_chosen', [])
-    today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
+    # Используем chosen из state_updates если они были сброшены (новый день), иначе из user_data
+    today_tasks_chosen = state_updates.get('today_tasks_chosen', user_data.get('today_tasks_chosen', []))
+    today_tasks_not_time_chosen = state_updates.get('today_tasks_not_time_chosen', user_data.get('today_tasks_not_time_chosen', []))
+    
+    # Валидируем chosen - убираем выбранные дела которых больше нет в расписании
+    today_tasks_chosen = [k for k in today_tasks_chosen if k in today_tasks]
+    today_tasks_not_time_chosen = [t for t in today_tasks_not_time_chosen if t in today_tasks_not_time]
 
-    # Добавляем scheduled задачи на сегодня
+    # Определяем "рабочую дату" расписания - это дата для которой мы показываем задачи
+    # Если is_new_day=False и last_tasks_date отличается от today_str, значит работаем после полуночи
+    # и должны показывать задачи для last_tasks_date (предыдущего дня)
+    if not is_new_day and last_tasks_date is not None and last_tasks_date != today_str:
+        # Работаем после полуночи - используем дату предыдущего дня для scheduled задач
+        schedule_date = datetime.strptime(last_tasks_date, "%Y-%m-%d").replace(tzinfo=ZoneInfo("Europe/Moscow"))
+    else:
+        # Обычный режим - используем текущую дату
+        schedule_date = now
+
+    # Добавляем scheduled задачи на рабочую дату расписания
     for key, values in scheduler_arguments.items():
-        if should_task_run_today(values, now):
+        if should_task_run_today(values, schedule_date):
             try:
                 task_text = normalize_preserve_case(key.split(' : ')[1]).replace('"', '').replace(' - ', '-')
                 tmp = task_text.split('-')
@@ -510,17 +536,19 @@ async def tasks_pool_function(message, state: FSMContext):
                 pass
 
     # Обновляем закат (асинхронно, не блокируя)
+    # Используем рабочую дату расписания для определения нужен ли пересчёт заката
+    schedule_date_str = schedule_date.strftime("%Y-%m-%d")
     sunrise = user_data.get('sunrise', None)
-    if sunrise != today_str:
+    if sunrise != schedule_date_str:
         old_sunset_keys = [k for k, v in today_tasks.items() if v == 'закат ☀️']
         for key in old_sunset_keys:
             del today_tasks[key]
         
         try:
-            sunset_time = await get_sunset_minus_30_safe()
+            sunset_time = await get_sunset_minus_30_safe(date=schedule_date_str)
             if sunset_time:
                 today_tasks[sunset_time.strftime("%H:%M")] = 'закат ☀️'
-                state_updates['sunrise'] = today_str
+                state_updates['sunrise'] = schedule_date_str
         except Exception as e:
             logger.error(f"Error getting sunset time: {e}")
     
