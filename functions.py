@@ -388,12 +388,12 @@ async def tasks_pool_function(message, state: FSMContext):
     
     # Новый день только если:
     # 1. Дата явно отличается (не None)
-    # 2. И дневник был отправлен за предыдущий день (или это первый запуск после смены дня)
-    # Это предотвращает сброс выбранных дел при работе после полуночи
+    # 2. И дневник был отправлен за предыдущий день
+    # Если дневник НЕ был отправлен - продолжаем работать с текущим расписанием
     is_new_day = (
         last_tasks_date is not None 
         and last_tasks_date != today_str
-        and (diary_submitted_date == last_tasks_date or diary_submitted_date is None)
+        and diary_submitted_date == last_tasks_date
     )
     
     # Получаем данные из state или БД
@@ -462,10 +462,11 @@ async def tasks_pool_function(message, state: FSMContext):
         state_updates['today_tasks_not_time_chosen'] = []
         state_updates['diary_submitted_date'] = None  # Сбрасываем флаг отправки дневника для нового дня
     else:
-        # Сохраняем/обновляем дату
-        if last_tasks_date is None or last_tasks_date != today_str:
+        # Сохраняем дату только при первом открытии (last_tasks_date is None)
+        # После полуночи НЕ обновляем дату - продолжаем работать с предыдущим днём
+        if last_tasks_date is None:
             state_updates['today_tasks_date'] = today_str
-            # Первое открытие или продолжение работы после полуночи - добавляем разовые дела если их нет
+            # Первое открытие - добавляем разовые дела
             for task in one_time_tasks:
                 if task not in today_tasks_not_time and task not in today_tasks.values():
                     today_tasks_not_time.append(task)
