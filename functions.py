@@ -396,6 +396,9 @@ async def tasks_pool_function(message, state: FSMContext):
         and diary_submitted_date == last_tasks_date
     )
     
+    logger.debug(f"tasks_pool_function: user={user_id_str}, now={today_str}, last_date={last_tasks_date}, "
+                 f"diary_submitted={diary_submitted_date}, is_new_day={is_new_day}")
+    
     # Получаем данные из state или БД
     tasks_pool = user_data.get('tasks_pool', [])
     one_time_tasks = user_data.get('one_time_tasks', [])
@@ -494,14 +497,6 @@ async def tasks_pool_function(message, state: FSMContext):
     today_tasks_not_time = [t for t in today_tasks_not_time 
                            if not _is_scheduled_task(t) and t in valid_tasks]
     
-    # Используем chosen из state_updates если они были сброшены (новый день), иначе из user_data
-    today_tasks_chosen = state_updates.get('today_tasks_chosen', user_data.get('today_tasks_chosen', []))
-    today_tasks_not_time_chosen = state_updates.get('today_tasks_not_time_chosen', user_data.get('today_tasks_not_time_chosen', []))
-    
-    # Валидируем chosen - убираем выбранные дела которых больше нет в расписании
-    today_tasks_chosen = [k for k in today_tasks_chosen if k in today_tasks]
-    today_tasks_not_time_chosen = [t for t in today_tasks_not_time_chosen if t in today_tasks_not_time]
-
     # Определяем "рабочую дату" расписания - это дата для которой мы показываем задачи
     # Если is_new_day=False и last_tasks_date отличается от today_str, значит работаем после полуночи
     # и должны показывать задачи для last_tasks_date (предыдущего дня)
@@ -552,6 +547,25 @@ async def tasks_pool_function(message, state: FSMContext):
                 state_updates['sunrise'] = schedule_date_str
         except Exception as e:
             logger.error(f"Error getting sunset time: {e}")
+    
+    # Теперь валидируем chosen - ПОСЛЕ добавления scheduled задач и заката
+    # Используем chosen из state_updates если они были сброшены (новый день), иначе из user_data
+    today_tasks_chosen = state_updates.get('today_tasks_chosen', user_data.get('today_tasks_chosen', []))
+    today_tasks_not_time_chosen = state_updates.get('today_tasks_not_time_chosen', user_data.get('today_tasks_not_time_chosen', []))
+    
+    # Валидируем chosen - убираем выбранные дела которых больше нет в расписании
+    original_chosen = today_tasks_chosen.copy() if today_tasks_chosen else []
+    original_not_time_chosen = today_tasks_not_time_chosen.copy() if today_tasks_not_time_chosen else []
+    today_tasks_chosen = [k for k in today_tasks_chosen if k in today_tasks]
+    today_tasks_not_time_chosen = [t for t in today_tasks_not_time_chosen if t in today_tasks_not_time]
+    
+    # Сохраняем валидированные chosen только если они изменились
+    if today_tasks_chosen != original_chosen:
+        state_updates['today_tasks_chosen'] = today_tasks_chosen
+    if today_tasks_not_time_chosen != original_not_time_chosen:
+        state_updates['today_tasks_not_time_chosen'] = today_tasks_not_time_chosen
+    
+    logger.debug(f"tasks_pool_function: chosen={today_tasks_chosen}, not_time_chosen={today_tasks_not_time_chosen}")
     
     # Один вызов update_data
     state_updates['today_tasks'] = today_tasks
