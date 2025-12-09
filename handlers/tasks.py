@@ -487,8 +487,8 @@ async def change_one_time_tasks_2(call, state) -> None:
 
     elif data == 'Удалить':
         updated_tasks = [task for task in one_time_tasks if task not in one_time_chosen_tasks]
-        for task in one_time_chosen_tasks:
-            await call.message.answer(f'Вы удалили "{task}"')
+        if one_time_chosen_tasks:
+            await call.message.answer(f'Вы удалили: {", ".join(one_time_chosen_tasks)}')
         await replace_one_time_tasks(user_id, updated_tasks)
         await state.update_data(one_time_chosen_tasks=[], one_time_tasks=updated_tasks)
         keyboard = keyboard_builder(tasks_list=updated_tasks, chosen=[], grid=1, add_dell=True)
