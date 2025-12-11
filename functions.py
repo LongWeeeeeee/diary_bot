@@ -387,17 +387,18 @@ async def tasks_pool_function(message, state: FSMContext):
     diary_submitted_date = user_data.get('diary_submitted_date', None)
     
     # Новый день только если:
-    # 1. Дата явно отличается (не None)
-    # 2. И дневник был отправлен за предыдущий день
-    # Если дневник НЕ был отправлен - продолжаем работать с текущим расписанием
+    # 1. Дата расписания была установлена
+    # 2. Текущая дата отличается от даты расписания  
+    # 3. Дневник был ЯВНО отправлен за дату расписания (last_tasks_date)
+    # Это гарантирует что сброс происходит только после явной отправки дневника
     is_new_day = (
         last_tasks_date is not None 
         and last_tasks_date != today_str
         and diary_submitted_date == last_tasks_date
     )
     
-    logger.debug(f"tasks_pool_function: user={user_id_str}, now={today_str}, last_date={last_tasks_date}, "
-                 f"diary_submitted={diary_submitted_date}, is_new_day={is_new_day}")
+    logger.info(f"tasks_pool_function: user={user_id_str}, now={today_str}, last_date={last_tasks_date}, "
+                f"diary_submitted={diary_submitted_date}, is_new_day={is_new_day}")
     
     # Получаем данные из state или БД
     tasks_pool = user_data.get('tasks_pool', [])
