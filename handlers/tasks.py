@@ -367,7 +367,11 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
             chosen=today_tasks_chosen + today_tasks_not_time_chosen,
             grid=1, add_dell=True, last_button="🚀Отправить 🚀", add_save=True
         )
-        await call.message.edit_reply_markup(reply_markup=keyboard)
+        try:
+            await call.message.edit_reply_markup(reply_markup=keyboard)
+        except TelegramBadRequest as exc:
+            if 'message is not modified' not in str(exc).lower():
+                raise
 
 
 @router.callback_query(StateFilter(ClientState.change_tasks_pool_1))
