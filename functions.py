@@ -752,6 +752,7 @@ async def close_db_pool():
 async def restore_notification_jobs(dp) -> int:
     """Восстанавливает jobs уведомлений для всех пользователей при старте бота."""
     from handlers.common import MessageProxy
+    from aiogram.fsm.storage.base import StorageKey
     
     users = await get_users_with_notifications()
     restored = 0
@@ -766,14 +767,15 @@ async def restore_notification_jobs(dp) -> int:
             message_proxy = MessageProxy(chat_id=user_id, from_user=None, bot=bot)
             message_proxy.from_user = type('User', (), {'id': user_id, 'full_name': 'User'})()
             
-            # Получаем state для пользователя
-            state = dp.fsm.get_context(bot=bot, chat_id=user_id, user_id=user_id)
+            # Получаем state для пользователя через storage
+            storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+            state = FSMContext(storage=dp.storage, key=storage_key)
             
             # Сохраняем user_id в state
             await state.update_data(user_id=user_id)
             
             # Создаём job
-            job_id = scheduler.add_job(
+            job = scheduler.add_job(
                 tasks_pool_function,
                 trigger='cron',
                 hour=hours,
@@ -782,12 +784,12 @@ async def restore_notification_jobs(dp) -> int:
             )
             
             # Сохраняем job_id в state
-            await state.update_data(job_id=job_id.id)
+            await state.update_data(job_id=job.id)
             
             restored += 1
             logger.info(f"Restored notification job for user {user_id} at {hours}:{minutes:02d}")
         except Exception as e:
-            logger.error(f"Failed to restore job for user {user_info['user_id']}: {e}")
+            logger.error(f"Failed to restore job for user {user_info['user_id']}: {e}", exc_info=True)
     
     logger.info(f"Restored {restored} notification jobs")
     return restored
