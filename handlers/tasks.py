@@ -286,16 +286,23 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
             await call.answer('Сначала выберите дела для удаления из расписания.', show_alert=True)
             return
 
+        # Отслеживаем удалённые дела чтобы не восстанавливать их
+        today_tasks_deleted = set(user_data.get('today_tasks_deleted', []))
+        
         for time_key in today_tasks_chosen:
             if time_key in today_tasks:
+                task_name = today_tasks[time_key]
+                today_tasks_deleted.add(task_name)
                 del today_tasks[time_key]
         for task in today_tasks_not_time_chosen:
             if task in today_tasks_not_time:
+                today_tasks_deleted.add(task)
                 today_tasks_not_time.remove(task)
         
         await state.update_data(
             today_tasks=today_tasks, today_tasks_not_time=today_tasks_not_time,
-            today_tasks_chosen=[], today_tasks_not_time_chosen=[]
+            today_tasks_chosen=[], today_tasks_not_time_chosen=[],
+            today_tasks_deleted=list(today_tasks_deleted)
         )
 
         keyboard = keyboard_builder(

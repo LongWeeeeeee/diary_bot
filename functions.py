@@ -543,6 +543,8 @@ async def tasks_pool_function(message, state: FSMContext):
 
     today_tasks = user_data.get("today_tasks", {})
     today_tasks_not_time = user_data.get("today_tasks_not_time", [])
+    # Множество удалённых дел за сегодня — не восстанавливаем их из daily_tasks
+    today_tasks_deleted = set(user_data.get("today_tasks_deleted", []))
 
     # Если новый день - сбрасываем today_tasks до daily_tasks + one_time_tasks
     if is_new_day:
@@ -562,9 +564,11 @@ async def tasks_pool_function(message, state: FSMContext):
         state_updates["today_tasks_date"] = today_str
         state_updates["today_tasks_chosen"] = []
         state_updates["today_tasks_not_time_chosen"] = []
+        state_updates["today_tasks_deleted"] = []  # Сбрасываем удалённые дела для нового дня
         state_updates["diary_submitted_date"] = (
             None  # Сбрасываем флаг отправки дневника для нового дня
         )
+        today_tasks_deleted = set()  # Обнуляем локальную переменную тоже
     else:
         # Сохраняем дату только при первом открытии (last_tasks_date is None)
         # После полуночи НЕ обновляем дату - продолжаем работать с предыдущим днём
@@ -579,20 +583,29 @@ async def tasks_pool_function(message, state: FSMContext):
                     today_tasks_not_time.append(task)
         # Восстанавливаем расписание из daily_*, если оно отсутствует
         if not today_tasks:
-            today_tasks = daily_tasks.copy()
+            # Не восстанавливаем удалённые дела
+            today_tasks = {
+                k: v for k, v in daily_tasks.items() if v not in today_tasks_deleted
+            }
         else:
             for time_key, task in daily_tasks.items():
-                today_tasks.setdefault(time_key, task)
+                # Не восстанавливаем удалённые дела
+                if task not in today_tasks_deleted:
+                    today_tasks.setdefault(time_key, task)
 
         if not today_tasks_not_time:
-            today_tasks_not_time = daily_tasks_not_time.copy()
+            # Не восстанавливаем удалённые дела
+            today_tasks_not_time = [
+                t for t in daily_tasks_not_time if t not in today_tasks_deleted
+            ]
             # Добавляем разовые дела
             for task in one_time_tasks:
-                if task not in today_tasks_not_time:
+                if task not in today_tasks_not_time and task not in today_tasks_deleted:
                     today_tasks_not_time.append(task)
         else:
             for task in daily_tasks_not_time:
-                if task not in today_tasks_not_time:
+                # Не восстанавливаем удалённые дела
+                if task not in today_tasks_not_time and task not in today_tasks_deleted:
                     today_tasks_not_time.append(task)
 
     # Фильтруем невалидные и старые scheduled задачи
