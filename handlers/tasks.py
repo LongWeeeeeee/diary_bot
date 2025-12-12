@@ -493,6 +493,31 @@ async def change_one_time_tasks_2(call, state) -> None:
         updated_tasks = [task for task in one_time_tasks if task not in one_time_chosen_tasks]
         if one_time_chosen_tasks:
             await call.message.answer(f'Вы удалили: {", ".join(one_time_chosen_tasks)}')
+            
+            # Удаляем разовые дела из today_tasks и today_tasks_not_time
+            today_tasks = user_data.get('today_tasks', {})
+            today_tasks_not_time = user_data.get('today_tasks_not_time', [])
+            today_tasks_chosen = user_data.get('today_tasks_chosen', [])
+            today_tasks_not_time_chosen = user_data.get('today_tasks_not_time_chosen', [])
+            
+            # Удаляем из today_tasks (дела с временем)
+            keys_to_delete = [k for k, v in today_tasks.items() if v in one_time_chosen_tasks]
+            for key in keys_to_delete:
+                del today_tasks[key]
+                if key in today_tasks_chosen:
+                    today_tasks_chosen.remove(key)
+            
+            # Удаляем из today_tasks_not_time (дела без времени)
+            today_tasks_not_time = [t for t in today_tasks_not_time if t not in one_time_chosen_tasks]
+            today_tasks_not_time_chosen = [t for t in today_tasks_not_time_chosen if t not in one_time_chosen_tasks]
+            
+            await state.update_data(
+                today_tasks=today_tasks,
+                today_tasks_not_time=today_tasks_not_time,
+                today_tasks_chosen=today_tasks_chosen,
+                today_tasks_not_time_chosen=today_tasks_not_time_chosen
+            )
+        
         await replace_one_time_tasks(user_id, updated_tasks)
         await state.update_data(one_time_chosen_tasks=[], one_time_tasks=updated_tasks)
         keyboard = keyboard_builder(tasks_list=updated_tasks, chosen=[], grid=1, add_dell=True)
