@@ -630,57 +630,52 @@ async def tasks_pool_function(message, state: FSMContext):
     else:
         schedule_date = now
 
-    # "Календарная" дата — всегда сегодняшний день. Нужна для задач "в определенную дату",
-    # которые должны переключаться строго в 00:00 независимо от того, какую дату мы сейчас "заполняем".
-    calendar_date = now
-
     # 1) Удаляем из today_* все одноразовые date-задачи, чтобы после 00:00 они не "залипали"
-    # и чтобы их отметки автоматически сбросились (chosen валидируется позже по факту наличия в today_*).
+    # НО: только если дневник уже отправлен (is_new_day) или это тот же день.
+    # Если после полуночи дневник ещё не отправлен — не удаляем задачи, чтобы сохранить выбор.
     date_task_texts: set[str] = set()
+    if working_date_str == today_str:
+        # Только если работаем с сегодняшним днём — удаляем и пересчитываем date-задачи
+        for key, values in scheduler_arguments.items():
+            if values.get("trigger") == "date" or "run_date" in values:
+                try:
+                    task_text = (
+                        normalize_preserve_case(key.split(" : ")[1])
+                        .replace('"', "")
+                        .replace(" - ", "-")
+                    )
+                    date_task_texts.add(task_text)
+                except (IndexError, AttributeError):
+                    continue
+
+        if date_task_texts:
+            # удаляем time-based date задачи
+            to_delete_time_keys = []
+            for time_key, task_val in today_tasks.items():
+                # date задачи с временем хранятся как "task_display" (название + суффиксы),
+                # поэтому проверяем вхождение исходного task_text как префикса.
+                for full_text in date_task_texts:
+                    tmp = full_text.split("-")
+                    if len(tmp) >= 2:
+                        task_name = tmp[0].strip()
+                        suffix_parts = tmp[1].split(" ")[1:]
+                        task_display = f"{task_name} {' '.join(suffix_parts)}".strip()
+                        if task_val == task_display:
+                            to_delete_time_keys.append(time_key)
+                            break
+            for k in to_delete_time_keys:
+                today_tasks.pop(k, None)
+
+            # удаляем not-time date задачи по точному совпадению текста
+            today_tasks_not_time = [
+                t for t in today_tasks_not_time if t not in date_task_texts
+            ]
+
+    # 2) Добавляем scheduled задачи по schedule_date (рабочая дата заполнения)
+    # Это гарантирует, что после полуночи мы продолжаем показывать задачи за вчера,
+    # пока дневник не отправлен.
     for key, values in scheduler_arguments.items():
-        if values.get("trigger") == "date" or "run_date" in values:
-            try:
-                task_text = (
-                    normalize_preserve_case(key.split(" : ")[1])
-                    .replace('"', "")
-                    .replace(" - ", "-")
-                )
-                date_task_texts.add(task_text)
-            except (IndexError, AttributeError):
-                continue
-
-    if date_task_texts:
-        # удаляем time-based date задачи
-        to_delete_time_keys = []
-        for time_key, task_val in today_tasks.items():
-            # date задачи с временем хранятся как "task_display" (название + суффиксы),
-            # поэтому проверяем вхождение исходного task_text как префикса.
-            for full_text in date_task_texts:
-                tmp = full_text.split("-")
-                if len(tmp) >= 2:
-                    task_name = tmp[0].strip()
-                    suffix_parts = tmp[1].split(" ")[1:]
-                    task_display = f"{task_name} {' '.join(suffix_parts)}".strip()
-                    if task_val == task_display:
-                        to_delete_time_keys.append(time_key)
-                        break
-        for k in to_delete_time_keys:
-            today_tasks.pop(k, None)
-
-        # удаляем not-time date задачи по точному совпадению текста
-        today_tasks_not_time = [
-            t for t in today_tasks_not_time if t not in date_task_texts
-        ]
-
-    # 2) Добавляем scheduled задачи:
-    # - одноразовые "в определенную дату" (trigger=date/run_date) — по calendar_date (строго в 00:00)
-    # - остальные scheduled (ежедневные/недельные и т.п.) — по schedule_date (рабочая дата заполнения)
-    for key, values in scheduler_arguments.items():
-        run_on = (
-            calendar_date
-            if (values.get("trigger") == "date" or "run_date" in values)
-            else schedule_date
-        )
+        run_on = schedule_date
         if should_task_run_today(values, run_on):
             try:
                 task_text = (
@@ -696,13 +691,16 @@ async def tasks_pool_function(message, state: FSMContext):
                         task_name = tmp[0].strip()
                         suffix_parts = tmp[1].split(" ")[1:]
                         task_display = f"{task_name} {' '.join(suffix_parts)}".strip()
-                        if job_timing not in today_tasks:
+                        # Не добавляем удалённые дела
+                        if job_timing not in today_tasks and task_display not in today_tasks_deleted:
                             today_tasks[job_timing] = task_display
                     else:
-                        if task_text not in today_tasks_not_time:
+                        # Не добавляем удалённые дела
+                        if task_text not in today_tasks_not_time and task_text not in today_tasks_deleted:
                             today_tasks_not_time.append(task_text)
                 else:
-                    if task_text not in today_tasks_not_time:
+                    # Не добавляем удалённые дела
+                    if task_text not in today_tasks_not_time and task_text not in today_tasks_deleted:
                         today_tasks_not_time.append(task_text)
             except (IndexError, AttributeError):
                 pass

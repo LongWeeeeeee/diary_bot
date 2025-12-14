@@ -90,7 +90,8 @@ async def process_edit_tasks_pool_callback(call: types.CallbackQuery, state: FSM
                         del daily_tasks_copy[key]
 
         if deleted_names:
-            await call.message.answer(f'Вы удалили: {", ".join(deleted_names)}')
+            deleted_list = "\n".join(deleted_names)
+            await call.message.answer(f'Вы удалили:\n{deleted_list}')
 
         # Фильтруем daily_tasks - только задачи которые остались в tasks_pool
         tasks_pool_set = set(tasks_pool)
@@ -425,7 +426,13 @@ async def new_today_tasks(message: Message, state: FSMContext) -> None:
         temp = user_data.get('temp', None)
         if temp:
             today_tasks_not_time.append(temp)
-            await state.update_data(today_tasks_not_time=today_tasks_not_time)
+            # Убираем из удалённых, если было удалено ранее
+            today_tasks_deleted = set(user_data.get('today_tasks_deleted', []))
+            today_tasks_deleted.discard(temp)
+            await state.update_data(
+                today_tasks_not_time=today_tasks_not_time,
+                today_tasks_deleted=list(today_tasks_deleted)
+            )
             await message.answer('Отлично! Дело добавлено в ваше расписание')
             await tasks_pool_function(message=message, state=state)
         else:
@@ -450,7 +457,13 @@ async def new_today_tasks(message: Message, state: FSMContext) -> None:
             return
         if task:
             today_tasks[data] = task
-            await state.update_data(today_tasks=today_tasks)
+            # Убираем из удалённых, если было удалено ранее
+            today_tasks_deleted = set(user_data.get('today_tasks_deleted', []))
+            today_tasks_deleted.discard(task)
+            await state.update_data(
+                today_tasks=today_tasks,
+                today_tasks_deleted=list(today_tasks_deleted)
+            )
             await message.answer('Отлично! Дело добавлено в ваше расписание')
             await tasks_pool_function(message=message, state=state)
         else:
@@ -499,7 +512,8 @@ async def change_one_time_tasks_2(call, state) -> None:
     elif data == 'Удалить':
         updated_tasks = [task for task in one_time_tasks if task not in one_time_chosen_tasks]
         if one_time_chosen_tasks:
-            await call.message.answer(f'Вы удалили: {", ".join(one_time_chosen_tasks)}')
+            deleted_list = "\n".join(one_time_chosen_tasks)
+            await call.message.answer(f'Вы удалили:\n{deleted_list}')
             
             # Удаляем разовые дела из today_tasks и today_tasks_not_time
             today_tasks = user_data.get('today_tasks', {})

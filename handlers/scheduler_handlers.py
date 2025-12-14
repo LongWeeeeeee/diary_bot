@@ -143,7 +143,8 @@ async def date_jobs_keyboard_callback(call: types.CallbackQuery, state: FSMConte
         
         # Сообщаем об удалённых задачах одним сообщением
         if deleted_tasks:
-            await call.message.answer(f'Вы удалили: {", ".join(deleted_tasks)}')
+            deleted_list = "\n".join(deleted_tasks)
+            await call.message.answer(f'Вы удалили:\n{deleted_list}')
 
         if len(scheduler_arguments) == 0:
             user_data.pop('scheduler_arguments', None)
