@@ -598,10 +598,6 @@ async def tasks_pool_function(message, state: FSMContext):
             today_tasks_not_time = [
                 t for t in daily_tasks_not_time if t not in today_tasks_deleted
             ]
-            # Добавляем разовые дела
-            for task in one_time_tasks:
-                if task not in today_tasks_not_time and task not in today_tasks_deleted:
-                    today_tasks_not_time.append(task)
         else:
             for task in daily_tasks_not_time:
                 # Не восстанавливаем удалённые дела

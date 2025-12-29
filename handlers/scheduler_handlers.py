@@ -74,21 +74,13 @@ async def date_jobs_keyboard(message: Message, state: FSMContext) -> None:
             display = [scheduler_display(key) for key in scheduler_keys]
             keyboard = keyboard_builder(tasks_list=display, chosen=[], add_dell=True)
             await state.update_data(date_jobs_keys=scheduler_keys, date_jobs_display=display)
-            settings_buttons = ['Напоминания', 'В определенную дату', 'Опрашиваемые данные', 'Список дел', 'Разовые дела']
             await message.answer('Ваши задачи', reply_markup=keyboard)
-            await message.answer(
-                'Для удаления выберите интересующие вас дела и нажмите "Удалить"\n'
-                '"Добавить" - если хотите добавить новую задачу',
-                reply_markup=generate_keyboard(settings_buttons, last_button='В Главное Меню')
-            )
             await state.set_state(ClientState.date_jobs)
         else:
-            settings_buttons = ['Напоминания', 'В определенную дату', 'Опрашиваемые данные', 'Список дел', 'Разовые дела']
             await message.answer(
                 'Введите новое дело и время через "-". Например:\n'
                 'cходить на кружок - 18:00\n\n'
-                'Если дело без времени, то впишите просто дело',
-                reply_markup=generate_keyboard(settings_buttons, last_button='В Главное Меню')
+                'Если дело без времени, то впишите просто дело'
             )
             await state.set_state(ClientState.date_jobs_1)
     else:
