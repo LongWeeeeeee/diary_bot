@@ -277,6 +277,7 @@ async def personal_rate_1(call, state, flag=False) -> None:
         one_time_chosen_tasks=[], session_accrued_tasks=[],
         today_tasks={}, today_tasks_not_time=[], sunrise=None,
         today_tasks_date=None,
+        today_tasks_deleted=[],  # Сбрасываем удалённые дела
         diary_submitted_date=submitted_for_date,  # Отмечаем что дневник отправлен за дату расписания
         one_time_tasks=batch_tasks_updates.get('one_time_tasks', one_time_tasks),
         daily_tasks=db_profile_updates.get('daily_tasks', user_data.get('daily_tasks', {})),

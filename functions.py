@@ -546,7 +546,7 @@ async def tasks_pool_function(message, state: FSMContext):
     # Множество удалённых дел за сегодня — не восстанавливаем их из daily_tasks
     today_tasks_deleted = set(user_data.get("today_tasks_deleted", []))
 
-    # Если новый день - сбрасываем today_tasks до daily_tasks + one_time_tasks
+    # Если новый день - сбрасываем today_tasks до daily_tasks
     if is_new_day:
         logger.info(
             f"New day detected ({last_tasks_date} -> {today_str}), resetting today_tasks for user {user_id_str}"
@@ -557,10 +557,6 @@ async def tasks_pool_function(message, state: FSMContext):
         today_tasks_not_time = [
             t for t in daily_tasks_not_time if not _is_scheduled_task(t)
         ]
-        # Добавляем разовые дела в расписание на новый день
-        for task in one_time_tasks:
-            if task not in today_tasks_not_time and task not in today_tasks.values():
-                today_tasks_not_time.append(task)
         state_updates["today_tasks_date"] = today_str
         state_updates["today_tasks_chosen"] = []
         state_updates["today_tasks_not_time_chosen"] = []
@@ -574,13 +570,6 @@ async def tasks_pool_function(message, state: FSMContext):
         # После полуночи НЕ обновляем дату - продолжаем работать с предыдущим днём
         if last_tasks_date is None:
             state_updates["today_tasks_date"] = today_str
-            # Первое открытие - добавляем разовые дела
-            for task in one_time_tasks:
-                if (
-                    task not in today_tasks_not_time
-                    and task not in today_tasks.values()
-                ):
-                    today_tasks_not_time.append(task)
         # Восстанавливаем расписание из daily_*, если оно отсутствует
         if not today_tasks:
             # Не восстанавливаем удалённые дела
