@@ -116,9 +116,10 @@ async def process_total_sleep(message: Message, state: FSMContext) -> None:
             user_message = float(message.text.replace(',', '.'))
             await state.update_data(sleep_quality=user_message)
             await message.answer(
-                'Подробно расскажи про свой день.\n'
-                'Выгрузи все эмоции которые ты сегодня пережил и события связанные с ними. '
-                'Это поможет тебе лучше заснуть'
+                'В чем ты лучше себя вчерашнего? Не обязательно быть супер-продуктивным, '
+                'достаточно хотя бы мизерного процента и ты уже не зря прожил этот день. '
+                'Также можешь выгрузить свои эмоции за этот день, это помогает расслабиться '
+                'и не крутить в голове эти мысли'
             )
             await state.set_state(ClientState.about_day)
         except ValueError:
@@ -126,9 +127,10 @@ async def process_total_sleep(message: Message, state: FSMContext) -> None:
     else:
         await state.update_data(sleep_quality=0)
         await message.answer(
-            'Подробно расскажи про свой день.\n'
-            'Выгрузи все эмоции которые ты сегодня пережил и события связанные с ними. '
-            'Это поможет тебе лучше заснуть'
+            'В чем ты лучше себя вчерашнего? Не обязательно быть супер-продуктивным, '
+            'достаточно хотя бы мизерного процента и ты уже не зря прожил этот день. '
+            'Также можешь выгрузить свои эмоции за этот день, это помогает расслабиться '
+            'и не крутить в голове эти мысли'
         )
         await state.set_state(ClientState.about_day)
 

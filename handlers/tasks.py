@@ -246,8 +246,10 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
         else:
             await state.update_data(my_steps='-', sleep_quality='-')
             await call.message.answer(
-                'Подробно расскажи про свой день.\n'
-                'Выгрузи все эмоции которые ты сегодня пережил и события связанные с ними.'
+                'В чем ты лучше себя вчерашнего? Не обязательно быть супер-продуктивным, '
+                'достаточно хотя бы мизерного процента и ты уже не зря прожил этот день. '
+                'Также можешь выгрузить свои эмоции за этот день, это помогает расслабиться '
+                'и не крутить в голове эти мысли'
             )
             await state.set_state(ClientState.about_day)
 
