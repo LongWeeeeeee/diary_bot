@@ -538,6 +538,12 @@ async def tasks_pool_function(message, state: FSMContext):
         for t in daily_tasks_not_time
         if not _is_scheduled_task(t) and t not in one_time_tasks and t in valid_tasks
     ]
+    # Убираем дубли: если дело уже есть с временем, оно не должно быть в списке без времени
+    if daily_tasks:
+        timed_daily_tasks = set(daily_tasks.values())
+        daily_tasks_not_time = [
+            t for t in daily_tasks_not_time if t not in timed_daily_tasks
+        ]
     state_updates["daily_tasks"] = daily_tasks
     state_updates["daily_tasks_not_time"] = daily_tasks_not_time
 
@@ -689,6 +695,13 @@ async def tasks_pool_function(message, state: FSMContext):
                         today_tasks_not_time.append(task_text)
             except (IndexError, AttributeError):
                 pass
+
+    # Убираем дубли: если дело уже есть с временем, оно не должно быть в списке без времени
+    if today_tasks:
+        timed_today_tasks = set(today_tasks.values())
+        today_tasks_not_time = [
+            t for t in today_tasks_not_time if t not in timed_today_tasks
+        ]
 
     # Обновляем закат (асинхронно, не блокируя)
     # Используем рабочую дату расписания для определения нужен ли пересчёт заката
@@ -1063,11 +1076,26 @@ async def executing_scheduler_job(state: FSMContext, out_message: str) -> None:
         if today_tasks.get(job_timing) != job:
             today_tasks[job_timing] = job
             state_updates["today_tasks"] = today_tasks
-    else:
+        # Если дело уже есть без времени — удаляем дубликат
         today_tasks_not_time = user_states_data.get("today_tasks_not_time", [])
-        if text_normalized not in today_tasks_not_time:
-            today_tasks_not_time.append(text_normalized)
+        if job in today_tasks_not_time:
+            today_tasks_not_time = [t for t in today_tasks_not_time if t != job]
             state_updates["today_tasks_not_time"] = today_tasks_not_time
+    else:
+        # Не добавляем дело без времени, если оно уже есть с временем
+        today_tasks = user_states_data.get("today_tasks", {})
+        if text_normalized in today_tasks.values():
+            today_tasks_not_time = user_states_data.get("today_tasks_not_time", [])
+            if text_normalized in today_tasks_not_time:
+                today_tasks_not_time = [
+                    t for t in today_tasks_not_time if t != text_normalized
+                ]
+                state_updates["today_tasks_not_time"] = today_tasks_not_time
+        else:
+            today_tasks_not_time = user_states_data.get("today_tasks_not_time", [])
+            if text_normalized not in today_tasks_not_time:
+                today_tasks_not_time.append(text_normalized)
+                state_updates["today_tasks_not_time"] = today_tasks_not_time
 
     # Если это было разовое напоминание (trigger='date'), удаляем его из scheduler_arguments
     scheduler_arguments = user_states_data.get("scheduler_arguments", {})
