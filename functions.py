@@ -80,6 +80,96 @@ def _is_scheduled_task(task_name: str) -> bool:
     return False
 
 
+def notification_job_id(user_id: Union[int, str]) -> str:
+    """Возвращает стабильный job id для ежедневных уведомлений пользователя."""
+    return f"notify:{int(user_id)}"
+
+
+def _extract_notification_owner_id(message: Any) -> Optional[int]:
+    """Извлекает user_id из Message / MessageProxy для cleanup старых jobs."""
+    if message is None:
+        return None
+
+    from_user = getattr(message, "from_user", None)
+    if from_user is not None:
+        user_id = getattr(from_user, "id", None)
+        if user_id is not None:
+            return int(user_id)
+
+    chat = getattr(message, "chat", None)
+    if chat is not None:
+        chat_id = getattr(chat, "id", None)
+        if chat_id is not None:
+            return int(chat_id)
+
+    chat_id = getattr(message, "chat_id", None)
+    if chat_id is not None:
+        return int(chat_id)
+
+    return None
+
+
+def get_notification_job_ids(user_id: Union[int, str]) -> List[str]:
+    """Собирает все jobs ежедневных уведомлений пользователя, включая legacy-дубли."""
+    user_id = int(user_id)
+    stable_job = notification_job_id(user_id)
+    job_ids: List[str] = []
+
+    for job in scheduler.get_jobs():
+        if job.id == stable_job:
+            job_ids.append(job.id)
+            continue
+
+        if getattr(job, "func", None) is not tasks_pool_function:
+            continue
+
+        args = getattr(job, "args", ()) or ()
+        message = args[0] if args else None
+        if _extract_notification_owner_id(message) == user_id:
+            job_ids.append(job.id)
+
+    return list(dict.fromkeys(job_ids))
+
+
+def remove_notification_jobs(
+    user_id: Union[int, str], legacy_job_id: Optional[str] = None
+) -> List[str]:
+    """Удаляет все найденные jobs ежедневных уведомлений пользователя."""
+    job_ids = get_notification_job_ids(user_id)
+    if legacy_job_id:
+        job_ids.append(legacy_job_id)
+
+    removed: List[str] = []
+    for job_id in dict.fromkeys(job_ids):
+        try:
+            scheduler.remove_job(job_id=job_id)
+            removed.append(job_id)
+        except Exception:
+            pass
+    return removed
+
+
+def ensure_notification_job(
+    user_id: Union[int, str],
+    hours: int,
+    minutes: int,
+    message: Any,
+    state: FSMContext,
+):
+    """Создаёт ровно одну job ежедневных уведомлений для пользователя."""
+    stable_job = notification_job_id(user_id)
+    remove_notification_jobs(user_id)
+    return scheduler.add_job(
+        tasks_pool_function,
+        trigger="cron",
+        hour=hours,
+        minute=minutes,
+        args=(message, state),
+        id=stable_job,
+        replace_existing=True,
+    )
+
+
 @timed
 async def add_day_to_excel(
     date: datetime,
@@ -910,19 +1000,19 @@ async def start(state: FSMContext, message: Message) -> None:
             and "hours" in p.notifications_data
             and "minutes" in p.notifications_data
         ):
-            # Стабильный job id на пользователя — не зависит от state и переживает рестарты.
-            stable_job_id = f"notify:{message.from_user.id}"
-
-            job_id = scheduler.add_job(
-                tasks_pool_function,
-                trigger="cron",
-                hour=p.notifications_data["hours"],
-                minute=p.notifications_data["minutes"],
-                args=(message, state),
-                id=stable_job_id,
-                replace_existing=True,
+            job_id = ensure_notification_job(
+                user_id=message.from_user.id,
+                hours=p.notifications_data["hours"],
+                minutes=p.notifications_data["minutes"],
+                message=message,
+                state=state,
             )
             state_updates["job_id"] = job_id.id
+        else:
+            remove_notification_jobs(
+                message.from_user.id, legacy_job_id=user_data.get("job_id")
+            )
+            state_updates["job_id"] = ""
 
         # Один вызов update_data
         t3 = time.perf_counter()
@@ -1007,26 +1097,12 @@ async def restore_notification_jobs(dp) -> int:
             # Сохраняем user_id в state
             await state.update_data(user_id=user_id)
 
-            stable_job_id = f"notify:{user_id}"
-
-            # Если такой job уже есть (например, после hot-reload) — удаляем и создаём заново
-            existing = scheduler.get_job(stable_job_id)
-            if existing:
-                try:
-                    existing.remove()
-                except Exception:
-                    # на некоторых executors remove может кидать, но нам не критично
-                    pass
-
-            # Создаём job со стабильным id
-            job = scheduler.add_job(
-                tasks_pool_function,
-                trigger="cron",
-                hour=hours,
-                minute=minutes,
-                args=(message_proxy, state),
-                id=stable_job_id,
-                replace_existing=True,
+            job = ensure_notification_job(
+                user_id=user_id,
+                hours=hours,
+                minutes=minutes,
+                message=message_proxy,
+                state=state,
             )
 
             # Сохраняем job_id в state (теперь он стабилен)

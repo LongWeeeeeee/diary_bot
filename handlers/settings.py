@@ -5,8 +5,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from config import bot, scheduler, ClientState, has_user_data
-from functions import generate_keyboard, keyboard_builder, start, tasks_pool_function
+from config import bot, ClientState, has_user_data
+from functions import (
+    ensure_notification_job,
+    generate_keyboard,
+    keyboard_builder,
+    remove_notification_jobs,
+    start,
+)
 from sqlite import edit_database
 
 from .common import MessageProxy
@@ -167,22 +173,19 @@ async def notifications_proceed(call, state):
         date_builder.adjust(2, 1)
 
         if notifications_data['chosen_notifications'] == ['Включено']:
-            job_id = scheduler.add_job(
-                tasks_pool_function,
-                trigger='cron',
-                hour=hours,
-                minute=minutes,
-                args=(message_proxy, state)
+            job_id = ensure_notification_job(
+                user_id=call.from_user.id,
+                hours=hours,
+                minutes=minutes,
+                message=message_proxy,
+                state=state,
             )
             state_updates['job_id'] = job_id.id
         else:
-            job_id = user_data.get('job_id', '')
-            if job_id:
-                try:
-                    scheduler.remove_job(job_id=job_id)
-                except Exception:
-                    pass
-                state_updates['job_id'] = ''
+            remove_notification_jobs(
+                call.from_user.id, legacy_job_id=user_data.get('job_id', '')
+            )
+            state_updates['job_id'] = ''
         
         await state.update_data(**state_updates)
         
@@ -224,19 +227,12 @@ async def notification_set_date(message, state):
     # Сохраняем user_id для использования в scheduler jobs
     await state.update_data(notifications_data=notifications_data, user_id=message.from_user.id)
     
-    job_id = user_data.get('job_id', '')
-    if job_id:
-        try:
-            scheduler.remove_job(job_id=job_id)
-        except Exception:
-            pass
-    
-    job_id = scheduler.add_job(
-        tasks_pool_function,
-        trigger='cron',
-        hour=hours,
-        minute=minutes,
-        args=(message, state)
+    job_id = ensure_notification_job(
+        user_id=message.from_user.id,
+        hours=hours,
+        minutes=minutes,
+        message=message,
+        state=state,
     )
     notifications_data['chosen_notifications'] = ['Включено']
     await state.update_data(job_id=job_id.id, notifications_data=notifications_data)

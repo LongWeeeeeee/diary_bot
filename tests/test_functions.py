@@ -1,15 +1,19 @@
 """Тесты для functions.py"""
 import pytest
 from datetime import datetime
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import functions as functions_module
 from functions import (
     normalized, parse_time_key, counter_positive, counter_negative,
-    generate_keyboard, keyboard_builder, _is_scheduled_task
+    generate_keyboard, keyboard_builder, _is_scheduled_task,
+    ensure_notification_job, get_notification_job_ids,
+    notification_job_id, remove_notification_jobs, tasks_pool_function
 )
 
 
@@ -120,6 +124,48 @@ class TestKeyboardBuilder:
         assert kb is not None
 
 
+class FakeJob:
+    def __init__(self, job_id, func=None, args=()):
+        self.id = job_id
+        self.func = func
+        self.args = args
+
+
+class FakeScheduler:
+    def __init__(self, jobs=None):
+        self.jobs = list(jobs or [])
+        self.removed = []
+        self.added = []
+
+    def get_jobs(self):
+        return list(self.jobs)
+
+    def remove_job(self, job_id):
+        self.removed.append(job_id)
+        self.jobs = [job for job in self.jobs if job.id != job_id]
+
+    def add_job(self, func, **kwargs):
+        job = FakeJob(kwargs["id"], func=func, args=kwargs.get("args", ()))
+        self.added.append({"func": func, **kwargs})
+        self.jobs.append(job)
+        return job
+
+
+def _message_for_user(user_id):
+    return SimpleNamespace(
+        from_user=SimpleNamespace(id=user_id),
+        chat=SimpleNamespace(id=user_id),
+    )
+
+
+def _proxy_for_user(user_id):
+    return SimpleNamespace(
+        from_user=None,
+        chat=SimpleNamespace(id=user_id),
+        chat_id=user_id,
+    )
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 
@@ -149,3 +195,63 @@ class TestIsScheduledTask:
     def test_empty_and_none(self):
         assert _is_scheduled_task("") is False
         assert _is_scheduled_task(None) is False
+
+
+class TestNotificationJobs:
+    def test_notification_job_id(self):
+        assert notification_job_id(123) == "notify:123"
+
+    def test_get_notification_job_ids_collects_stable_and_legacy_jobs(self, monkeypatch):
+        fake_scheduler = FakeScheduler(
+            [
+                FakeJob("notify:42", func=tasks_pool_function, args=(_message_for_user(42), object())),
+                FakeJob("legacy-42", func=tasks_pool_function, args=(_proxy_for_user(42), object())),
+                FakeJob("legacy-7", func=tasks_pool_function, args=(_message_for_user(7), object())),
+                FakeJob("date-job", func=object(), args=(_message_for_user(42), object())),
+            ]
+        )
+        monkeypatch.setattr(functions_module, "scheduler", fake_scheduler)
+
+        assert set(get_notification_job_ids(42)) == {"notify:42", "legacy-42"}
+
+    def test_remove_notification_jobs_deletes_all_duplicates_for_user(self, monkeypatch):
+        fake_scheduler = FakeScheduler(
+            [
+                FakeJob("notify:42", func=tasks_pool_function, args=(_message_for_user(42), object())),
+                FakeJob("legacy-42", func=tasks_pool_function, args=(_proxy_for_user(42), object())),
+                FakeJob("legacy-7", func=tasks_pool_function, args=(_message_for_user(7), object())),
+            ]
+        )
+        monkeypatch.setattr(functions_module, "scheduler", fake_scheduler)
+
+        removed = remove_notification_jobs(42)
+
+        assert set(removed) == {"notify:42", "legacy-42"}
+        assert set(fake_scheduler.removed) == {"notify:42", "legacy-42"}
+        assert [job.id for job in fake_scheduler.jobs] == ["legacy-7"]
+
+    def test_ensure_notification_job_replaces_duplicates_with_single_stable_job(self, monkeypatch):
+        fake_scheduler = FakeScheduler(
+            [
+                FakeJob("legacy-42", func=tasks_pool_function, args=(_proxy_for_user(42), object())),
+                FakeJob("notify:42", func=tasks_pool_function, args=(_message_for_user(42), object())),
+            ]
+        )
+        monkeypatch.setattr(functions_module, "scheduler", fake_scheduler)
+
+        job = ensure_notification_job(
+            user_id=42,
+            hours=10,
+            minutes=0,
+            message=_message_for_user(42),
+            state=object(),
+        )
+
+        assert job.id == "notify:42"
+        assert set(fake_scheduler.removed) == {"legacy-42", "notify:42"}
+        assert len(fake_scheduler.added) == 1
+        assert fake_scheduler.added[0]["trigger"] == "cron"
+        assert fake_scheduler.added[0]["hour"] == 10
+        assert fake_scheduler.added[0]["minute"] == 0
+        assert fake_scheduler.added[0]["replace_existing"] is True
+        assert [stored_job.id for stored_job in fake_scheduler.jobs] == ["notify:42"]
