@@ -10,6 +10,7 @@ from config import bot, dp, scheduler
 from sqlite import database_start
 from handlers import router
 from handlers.common import on_error_handler
+from stt import VoiceToTextMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,8 @@ async def main():
             loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s)))
 
     # Подключаем роутеры из handlers
+    # STT: voice/audio/video_note → text (Groq Whisper), same as Hermes gateway
+    dp.message.middleware(VoiceToTextMiddleware())
     dp.include_router(router)
     
     # Регистрация обработчика ошибок
