@@ -37,10 +37,43 @@ def get_groq_api_key() -> str:
     return (getattr(keys, "GROQ_API_KEY", None) or "").strip()
 
 
+# Groq Whisper accepts only these extensions (Telegram voice is often .oga).
+_GROQ_ALLOWED_EXTS = {
+    ".flac", ".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".ogg", ".opus", ".wav", ".webm",
+}
+# Telegram / container aliases → Groq-safe extension + MIME.
+_EXT_NORMALIZE = {
+    ".oga": (".ogg", "audio/ogg"),
+    ".ogg": (".ogg", "audio/ogg"),
+    ".opus": (".opus", "audio/opus"),
+    ".mp3": (".mp3", "audio/mpeg"),
+    ".mp4": (".mp4", "audio/mp4"),
+    ".m4a": (".m4a", "audio/mp4"),
+    ".wav": (".wav", "audio/wav"),
+    ".webm": (".webm", "audio/webm"),
+    ".flac": (".flac", "audio/flac"),
+    ".mpeg": (".mpeg", "audio/mpeg"),
+    ".mpga": (".mpga", "audio/mpeg"),
+}
+
+
+def _normalize_audio_name(path_or_name: str) -> tuple[str, str]:
+    """Return (filename_for_groq, content_type) with allowed extension."""
+    raw = Path(path_or_name or "voice.ogg")
+    ext = raw.suffix.lower() or ".ogg"
+    safe_ext, content_type = _EXT_NORMALIZE.get(ext, (".ogg", "audio/ogg"))
+    if safe_ext not in _GROQ_ALLOWED_EXTS:
+        safe_ext, content_type = ".ogg", "audio/ogg"
+    # Keep a stable basename; only the extension matters for Groq type sniffing.
+    return f"voice{safe_ext}", content_type
+
+
 async def download_telegram_file(bot: Bot, file_id: str) -> Path:
     """Download a Telegram voice/audio file to a temp path (caller deletes)."""
     tg_file = await bot.get_file(file_id)
-    suffix = Path(tg_file.file_path or "voice.ogg").suffix or ".ogg"
+    src_name = tg_file.file_path or "voice.ogg"
+    filename, _ctype = _normalize_audio_name(src_name)
+    suffix = Path(filename).suffix
     fd, tmp_name = tempfile.mkstemp(prefix="diary_stt_", suffix=suffix)
     os.close(fd)
     dest = Path(tmp_name)
@@ -87,11 +120,13 @@ async def transcribe_groq(
         form.add_field("language", lang)
 
     data = file_path.read_bytes()
+    # Telegram voice notes are often .oga — Groq rejects that extension.
+    filename, content_type = _normalize_audio_name(str(file_path))
     form.add_field(
         "file",
         data,
-        filename=file_path.name or "audio.ogg",
-        content_type="application/octet-stream",
+        filename=filename,
+        content_type=content_type,
     )
 
     owns_session = session is None
