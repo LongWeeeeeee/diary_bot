@@ -33,6 +33,7 @@ from config import (
     should_task_run_today,
     timed,
 )
+from analytics import MIN_RATED_DAYS, build_analysis
 from sqlite import (
     ParsedProfile,
     add_daily_log,
@@ -1077,10 +1078,11 @@ async def start(state: FSMContext, message: Message) -> None:
         logger.debug(f"start: update_data={int((t4 - t3) * 1000)}ms")
 
         user_id = p.user_id
-        path = f"{user_id}_Diary.xlsx"
+        path = diary_excel_path(user_id)
         if os.path.exists(path):
             keyboard = generate_keyboard(
-                ["Вывести Дневник", "Настройки"], first_button="Заполнить Дневник"
+                ["Вывести Дневник", "Анализ 📊", "Настройки"],
+                first_button="Заполнить Дневник",
             )
         else:
             keyboard = generate_keyboard(["Заполнить Дневник"], last_button="Настройки")
@@ -1174,6 +1176,61 @@ async def restore_notification_jobs(dp) -> int:
 
     logger.info(f"Restored {restored} notification jobs")
     return restored
+
+
+async def send_diary_analysis(message) -> None:
+    """Считает и отправляет разбор дневника пользователю."""
+    user_id = message.from_user.id
+    logs = await get_all_logs(user_id)
+    text = build_analysis(logs, today=datetime.now(TARGET_TZ).date())
+    for chunk in _chunk_lines(text.split("\n")):
+        await message.answer(chunk)
+
+
+async def weekly_analysis_broadcast() -> int:
+    """Раз в неделю шлёт разбор тем, у кого включены напоминания.
+
+    Пользователям без данных не пишем — незачем шуметь.
+    """
+    from handlers.common import MessageProxy
+
+    users = await get_users_with_notifications()
+    sent = 0
+    today = datetime.now(TARGET_TZ).date()
+
+    for user_info in users:
+        try:
+            user_id = int(user_info["user_id"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        try:
+            logs = await get_all_logs(user_id)
+            rated_days = sum(1 for row in logs if _to_float(row[5]) is not None)
+            if rated_days < MIN_RATED_DAYS:
+                continue
+            message_proxy = MessageProxy(chat_id=user_id, from_user=None, bot=bot)
+            text = build_analysis(logs, today=today)
+            for chunk in _chunk_lines(text.split("\n")):
+                await message_proxy.answer(chunk)
+            sent += 1
+        except Exception as e:
+            logger.error(f"Weekly analysis failed for user {user_id}: {e}")
+
+    logger.info(f"Weekly analysis sent to {sent} users")
+    return sent
+
+
+def ensure_weekly_analysis_job():
+    """Регистрирует еженедельную рассылку разбора (воскресенье, 20:07 МСК)."""
+    return scheduler.add_job(
+        weekly_analysis_broadcast,
+        trigger="cron",
+        day_of_week="sun",
+        hour=20,
+        minute=7,
+        id="weekly:analysis",
+        replace_existing=True,
+    )
 
 
 async def restore_scheduler_jobs(dp) -> int:
