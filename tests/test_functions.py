@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import functions as functions_module
 from functions import (
-    normalized, parse_time_key, counter_positive, counter_negative,
+    normalized, parse_time_key, counter_positive, _plural_days,
     generate_keyboard, keyboard_builder, _is_scheduled_task,
     ensure_notification_job, get_notification_job_ids,
     notification_job_id, remove_notification_jobs, tasks_pool_function
@@ -52,38 +52,77 @@ class TestParseTimeKey:
 
 
 class TestCounterPositive:
-    """Тесты для counter_positive."""
-    
+    """Тесты для counter_positive (серия подряд идущих календарных дней)."""
+
     def test_consecutive_days(self):
-        column = ["task1, task2", "task1, task2", "task1"]
-        assert counter_positive("task1", column) == 3
-    
+        history = [
+            ("2026-07-01", "task1, task2"),
+            ("2026-07-02", "task1, task2"),
+            ("2026-07-03", "task1"),
+        ]
+        assert counter_positive("task1", history) == 3
+
     def test_broken_streak(self):
-        column = ["task1", "task2", "task1"]
-        assert counter_positive("task1", column) == 1
-    
+        history = [
+            ("2026-07-01", "task1"),
+            ("2026-07-02", "task2"),
+            ("2026-07-03", "task1"),
+        ]
+        assert counter_positive("task1", history) == 1
+
     def test_no_match(self):
-        column = ["task2", "task3"]
-        assert counter_positive("task1", column) == 0
-    
+        history = [("2026-07-02", "task2"), ("2026-07-03", "task3")]
+        assert counter_positive("task1", history) == 0
+
     def test_empty_column(self):
         assert counter_positive("task1", []) == 0
 
+    def test_calendar_gap_breaks_streak(self):
+        """Пропущенный день (нет записи) обрывает серию, а не склеивает её."""
+        history = [
+            ("2026-06-20", "task1"),
+            ("2026-06-21", "task1"),
+            ("2026-07-03", "task1"),
+        ]
+        assert counter_positive("task1", history) == 1
 
-class TestCounterNegative:
-    """Тесты для counter_negative."""
-    
-    def test_days_since_last(self):
-        column = ["task1", "task2", "task2"]
-        assert counter_negative(column, "task1") == 2
-    
-    def test_done_today(self):
-        column = ["task1", "task2", "task1"]
-        assert counter_negative(column, "task1") == 0
-    
-    def test_never_done(self):
-        column = ["task2", "task3", "task4"]
-        assert counter_negative(column, "task1") == 3
+    def test_empty_day_breaks_streak(self):
+        """День с пустым списком дел обрывает серию."""
+        history = [
+            ("2026-07-01", "task1"),
+            ("2026-07-02", ""),
+            ("2026-07-03", "task1"),
+        ]
+        assert counter_positive("task1", history) == 1
+
+    def test_unsorted_history(self):
+        history = [
+            ("2026-07-03", "task1"),
+            ("2026-07-01", "task1"),
+            ("2026-07-02", "task1"),
+        ]
+        assert counter_positive("task1", history) == 3
+
+    def test_extra_spaces_in_activities(self):
+        history = [("2026-07-02", "task1 ,task2"), ("2026-07-03", " task1,task2 ")]
+        assert counter_positive("task1", history) == 2
+
+    def test_broken_date_ignored(self):
+        history = [("не дата", "task1"), ("2026-07-03", "task1")]
+        assert counter_positive("task1", history) == 1
+
+
+class TestPluralDays:
+    """Тесты для склонения слова «день»."""
+
+    def test_forms(self):
+        assert _plural_days(1) == "день"
+        assert _plural_days(2) == "дня"
+        assert _plural_days(5) == "дней"
+        assert _plural_days(11) == "дней"
+        assert _plural_days(21) == "день"
+        assert _plural_days(22) == "дня"
+        assert _plural_days(112) == "дней"
 
 
 class TestGenerateKeyboard:
@@ -255,3 +294,73 @@ class TestNotificationJobs:
         assert fake_scheduler.added[0]["minute"] == 0
         assert fake_scheduler.added[0]["replace_existing"] is True
         assert [stored_job.id for stored_job in fake_scheduler.jobs] == ["notify:42"]
+
+
+class _FakeBot:
+    def __init__(self):
+        self.pinned = []
+
+    async def pin_chat_message(self, chat_id, message_id):
+        self.pinned.append((chat_id, message_id))
+
+
+class _FakeMessage:
+    def __init__(self):
+        self.sent = []
+        self.chat = SimpleNamespace(id=1)
+        self.bot = _FakeBot()
+
+    async def answer(self, text):
+        self.sent.append(text)
+        return SimpleNamespace(message_id=len(self.sent))
+
+
+class TestCounterMaxDays:
+    """Тесты для итогового сообщения по сериям."""
+
+    @pytest.mark.asyncio
+    async def test_reports_streaks_without_negative_block(self):
+        message = _FakeMessage()
+        history = [
+            ("2026-07-01", "Растяжка, Бег"),
+            ("2026-07-02", "Растяжка"),
+            ("2026-07-03", "Растяжка, Бег"),
+        ]
+        records = await functions_module.counter_max_days(
+            activity_history=history,
+            message=message,
+            activities=["Растяжка", "Бег"],
+            personal_records={},
+        )
+        assert len(message.sent) == 1
+        text = message.sent[0]
+        assert "не делали" not in text
+        assert "Растяжка : 3 дня" in text
+        assert "Бег" not in text  # серия Бега прервалась 2 июля
+        assert records["Растяжка"] == 3
+        assert records["Бег"] == 1
+
+    @pytest.mark.asyncio
+    async def test_records_survive_without_streaks(self):
+        message = _FakeMessage()
+        history = [("2026-07-03", "Бег")]
+        records = await functions_module.counter_max_days(
+            activity_history=history,
+            message=message,
+            activities=["Бег"],
+            personal_records={"Бег": 4},
+        )
+        assert records == {"Бег": 4}
+        assert "Отличное начало" in message.sent[0]
+
+    @pytest.mark.asyncio
+    async def test_empty_history(self):
+        message = _FakeMessage()
+        records = await functions_module.counter_max_days(
+            activity_history=[],
+            message=message,
+            activities=["Бег"],
+            personal_records={"Бег": 2},
+        )
+        assert records == {"Бег": 2}
+        assert message.sent == ["Поздравляю! дневник заполнен"]

@@ -177,7 +177,7 @@ async def add_day_to_excel(
     sleep_quality: Union[int, float, str],
     personal_rate: Union[int, float],
     my_steps: Union[int, float, str],
-    tasks_pool: List[str],
+    tasks_pool: List[str],  # не используется, оставлен для совместимости вызовов
     user_message: str,
     message: Message,
     excel_chosen_tasks: Optional[List[str]] = None,
@@ -269,10 +269,10 @@ async def add_day_to_excel(
         await message.answer("Ошибка при сохранении файла дневника.")
         return None
 
-    activity_history = [log[1] for log in logs if log[1]]
+    # Дни без дел НЕ выбрасываем: они должны обрывать серию
+    activity_history = [(log[0], log[1]) for log in logs]
     answer = await counter_max_days(
         activity_history=activity_history,
-        tasks_pool=tasks_pool,
         message=message,
         activities=activities,
         personal_records=personal_records,
@@ -280,23 +280,6 @@ async def add_day_to_excel(
     if answer is not None:
         personal_records = answer
         return personal_records
-
-
-def counter_negative(column, current_word):
-    count = 0
-    for words in reversed(column):
-        if not isinstance(words, str):
-            count += 1
-            continue
-        try:
-            split_words = words.split(", ")
-            for word in split_words:
-                if word == current_word:
-                    return count
-        except (AttributeError, TypeError):
-            pass
-        count += 1
-    return count
 
 
 # day_to_prefix удалён - используется из config.py
@@ -313,17 +296,60 @@ def parse_time_key(key: str) -> int:
     return hours * 60 + minutes
 
 
-def counter_positive(current_word, column):
-    count = 0
-    for words in reversed(column):
-        if not isinstance(words, str):
-            return count
-        split_words = words.split(", ")
-        if current_word in split_words:
-            count += 1
+def _split_activities(raw) -> set:
+    """Разбирает строку дел за день в множество названий."""
+    if not isinstance(raw, str):
+        return set()
+    return {part.strip() for part in raw.split(",") if part.strip()}
+
+
+def _activities_by_day(history) -> Dict[Any, set]:
+    """Приводит историю [(дата, дела), ...] к словарю {date: {дела}}.
+
+    Пустые дни сохраняются (пустым множеством) — они обрывают серию.
+    """
+    by_day: Dict[Any, set] = {}
+    for row in history:
+        if not isinstance(row, (list, tuple)) or len(row) < 2:
+            continue
+        raw_date, raw_activities = row[0], row[1]
+        if isinstance(raw_date, datetime):
+            day = raw_date.date()
         else:
-            return count
+            try:
+                day = datetime.strptime(str(raw_date), "%Y-%m-%d").date()
+            except (TypeError, ValueError):
+                continue
+        by_day.setdefault(day, set()).update(_split_activities(raw_activities))
+    return by_day
+
+
+def counter_positive(current_word, history) -> int:
+    """Серия подряд идущих КАЛЕНДАРНЫХ дней с делом, считая от последней записи.
+
+    Пропущенный календарный день (нет записи или дело не отмечено) обрывает серию.
+    """
+    by_day = _activities_by_day(history)
+    if not by_day:
+        return 0
+    day = max(by_day)
+    count = 0
+    while current_word in by_day.get(day, set()):
+        count += 1
+        day -= timedelta(days=1)
     return count
+
+
+def _plural_days(count: int) -> str:
+    """Склонение слова «день» для числа."""
+    if 11 <= count % 100 <= 14:
+        return "дней"
+    last = count % 10
+    if last == 1:
+        return "день"
+    if last in (2, 3, 4):
+        return "дня"
+    return "дней"
 
 
 def _parse_job_datetime(
@@ -1194,60 +1220,64 @@ async def executing_scheduler_job(state: FSMContext, out_message: str) -> None:
 
 
 async def counter_max_days(
-    activity_history, tasks_pool, message, activities, personal_records, output=""
+    activity_history, message, activities, personal_records, output=""
 ):
-    column = activity_history
-    if column:
-        negative_dict = {
-            current_word: counter_negative(current_word=current_word, column=column)
-            for current_word in tasks_pool
-        }
-        positive_dict = {
-            current_word: counter_positive(current_word=current_word, column=column)
-            for current_word in activities
-        }
-        negative_output = "\n".join(
-            [
-                "{} : {}".format(key, value)
-                for key, value in negative_dict.items()
-                if value not in [0, 1]
-            ]
-        )
-        positive_output = []
-        if personal_records is None:
-            personal_records = {}
-        for key, value in positive_dict.items():
-            if key in personal_records:
-                if personal_records[key] < value:
-                    personal_records[key] = value
-            else:
-                personal_records[key] = value
-            if value not in [0, 1]:
-                positive_output.append(f"{key} : {value}")
-        positive_output = "\n".join(positive_output)
-        if positive_output:
-            output += f"Поздравляю! Вы соблюдаете эти дела уже столько дней:\n{positive_output}"
-        if negative_output:
-            # for name, value in negative_dict.items():
-            #     if value:
-            #         tasks_pool[name] = int(tasks_pool[name])*1.03
-            if output != "":
-                output += "\n\n"
-            output += (
-                f"Вы не делали эти дела уже столько дней:\n{negative_output}\n\n"
-                f"Может стоит дать им еще один шанс?"
-            )
-        if output:
-            send_message = await message.answer(output)
-            try:
-                await message.bot.pin_chat_message(
-                    message.chat.id, send_message.message_id
-                )
-            except Exception as e:
-                logger.debug(f"Could not pin message: {e}")
-            return personal_records
-    else:
+    """Считает серии подряд идущих дней по выполненным делам и шлёт итог.
+
+    Показываем только то, что человек ДЕЛАЕТ: сколько дней подряд держится
+    каждое дело и побит ли личный рекорд. Дела, которые давно не делались,
+    больше не считаем и не показываем.
+    """
+    if personal_records is None:
+        personal_records = {}
+    if not activity_history:
         await message.answer("Поздравляю! дневник заполнен")
+        return personal_records
+
+    streak_lines = []
+    started_lines = []
+    for current_word in dict.fromkeys(activities):
+        streak = counter_positive(current_word=current_word, history=activity_history)
+        if streak <= 0:
+            continue
+        previous_record = personal_records.get(current_word, 0)
+        try:
+            previous_record = int(previous_record)
+        except (TypeError, ValueError):
+            previous_record = 0
+        if streak > previous_record:
+            personal_records[current_word] = streak
+            is_record = streak >= 2
+        else:
+            is_record = False
+        if streak >= 2:
+            line = f"{current_word} : {streak} {_plural_days(streak)}"
+            if is_record:
+                line += " 🏆 личный рекорд!"
+            streak_lines.append(line)
+        else:
+            started_lines.append(current_word)
+
+    if streak_lines:
+        if output:
+            output += "\n\n"
+        output += "🔥 Вы держите эти дела уже:\n" + "\n".join(streak_lines)
+    elif started_lines:
+        if output:
+            output += "\n\n"
+        output += (
+            "Отличное начало! Сегодня отмечено:\n"
+            + "\n".join(started_lines)
+            + "\n\nПовторите завтра — и пойдёт серия 🔥"
+        )
+
+    if output:
+        send_message = await message.answer(output)
+        try:
+            await message.bot.pin_chat_message(message.chat.id, send_message.message_id)
+        except Exception as e:
+            logger.debug(f"Could not pin message: {e}")
+    return personal_records
 
 
 def generate_keyboard(
