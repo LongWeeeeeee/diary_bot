@@ -14,7 +14,10 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 logger = logging.getLogger(__name__)
 
 # Сколько дней должно быть В КАЖДОЙ группе, чтобы сравнение вообще имело смысл
-MIN_GROUP_SIZE = 3
+MIN_GROUP_SIZE = 4
+# Минимальная «уверенность» (статистика Уэлча): на 3-4 днях разница в балл
+# получается случайно, поэтому одного порога по разнице средних мало
+MIN_T_STAT = 1.8
 # Минимум оценённых дней, ниже которого не показываем выводы вообще
 MIN_RATED_DAYS = 5
 # Разница в средней оценке, ниже которой считаем это шумом
@@ -90,6 +93,22 @@ def _mean(values: Sequence[float]) -> Optional[float]:
     return statistics.fmean(values)
 
 
+def welch_t(first: Sequence[float], second: Sequence[float]) -> float:
+    """|t| Уэлча для двух выборок — грубая мера того, что разница не случайна.
+
+    Чем меньше группа и чем больше разброс внутри неё, тем ниже результат,
+    поэтому редкие дела перестают выигрывать у частых на случайном разбросе.
+    """
+    if len(first) < 2 or len(second) < 2:
+        return 0.0
+    mean_diff = statistics.fmean(first) - statistics.fmean(second)
+    var = statistics.variance(first) / len(first) + statistics.variance(second) / len(second)
+    if var <= 0:
+        # Разброса нет вообще: считаем разницу значимой, если она есть
+        return 99.0 if mean_diff else 0.0
+    return abs(mean_diff) / (var ** 0.5)
+
+
 def _split_by_activity(
     records: Sequence[DayRecord], activity: str
 ) -> Tuple[List[float], List[float]]:
@@ -124,13 +143,18 @@ def activity_insights(records: Sequence[DayRecord]) -> List[Tuple[str, str, floa
         diff = mean_with - mean_without
         if abs(diff) < MIN_RATE_DIFF:
             continue
+        strength = welch_t(with_it, without_it)
+        if strength < MIN_T_STAT:
+            continue
         sign = "выше" if diff > 0 else "ниже"
         text = (
             f"{activity}: {_fmt(mean_with)} против {_fmt(mean_without)} "
             f"({sign} на {_fmt(abs(diff))}, дней {len(with_it)}/{len(without_it)})"
         )
-        insights.append((activity, text, abs(diff)))
+        insights.append((activity, text, strength))
 
+    # Сортируем по уверенности, а не по величине разницы: иначе наверх лезут
+    # редкие дела со случайным разбросом
     insights.sort(key=lambda item: item[2], reverse=True)
     return insights
 
@@ -156,7 +180,7 @@ def _numeric_insight(
 
     mean_high, mean_low = _mean(high), _mean(low)
     diff = mean_high - mean_low
-    if abs(diff) < MIN_RATE_DIFF:
+    if abs(diff) < MIN_RATE_DIFF or welch_t(high, low) < MIN_T_STAT:
         return None
 
     direction = "выше" if diff > 0 else "ниже"

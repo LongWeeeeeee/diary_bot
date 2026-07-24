@@ -83,13 +83,19 @@ class TestActivityInsights:
 
 class TestNumericInsight:
     def test_sleep_effect(self):
-        rows = [log(f"2026-06-0{i + 1}", "", sleep=8, rate=9) for i in range(3)]
-        rows += [log(f"2026-06-1{i}", "", sleep=3, rate=5) for i in range(3)]
+        rows = [log(f"2026-06-0{i + 1}", "", sleep=8, rate=9) for i in range(4)]
+        rows += [log(f"2026-06-1{i}", "", sleep=3, rate=5) for i in range(4)]
         text = _numeric_insight(parse_logs(rows), "sleep", "Сон")
         assert text is not None and "выше" in text
 
     def test_not_enough_data(self):
         rows = [log(f"2026-06-0{i + 1}", "", sleep=8, rate=9) for i in range(3)]
+        assert _numeric_insight(parse_logs(rows), "sleep", "Сон") is None
+
+    def test_noisy_small_sample_is_rejected(self):
+        """Разница есть, но разброс внутри групп её съедает."""
+        rows = [log(f"2026-06-0{i + 1}", "", sleep=8, rate=r) for i, r in enumerate([10, 4, 9, 5])]
+        rows += [log(f"2026-06-1{i}", "", sleep=3, rate=r) for i, r in enumerate([9, 3, 8, 4])]
         assert _numeric_insight(parse_logs(rows), "sleep", "Сон") is None
 
 
@@ -161,3 +167,28 @@ class TestBuildAnalysis:
         text = build_analysis(rows, today=date(2026, 7, 24))
         # Сообщение шлётся без parse_mode, поэтому теги не экранируем, но и не ломаемся
         assert "Бег <b>" in text
+
+
+class TestWelchGuard:
+    """Редкие дела не должны обгонять частые на случайном разбросе."""
+
+    def test_rejects_noisy_small_group(self):
+        from analytics import welch_t
+
+        rows = [log(f"2026-06-0{i + 1}", "Редкое", rate=r) for i, r in enumerate([10, 5, 9, 4])]
+        rows += [log(f"2026-06-1{i}", "Другое", rate=r) for i, r in enumerate([8, 3, 7, 4, 9, 5])]
+        assert activity_insights(parse_logs(rows)) == []
+        assert welch_t([10, 5, 9, 4], [8, 3, 7, 4, 9, 5]) < 1.8
+
+    def test_keeps_consistent_group(self):
+        rows = [log(f"2026-06-0{i + 1}", "Бег", rate=9) for i in range(5)]
+        rows += [log(f"2026-06-1{i}", "Сон", rate=6) for i in range(5)]
+        names = [name for name, _, _ in activity_insights(parse_logs(rows))]
+        assert "Бег" in names
+
+    def test_zero_variance_pairs(self):
+        from analytics import welch_t
+
+        assert welch_t([8, 8, 8], [5, 5, 5]) == 99.0
+        assert welch_t([8, 8, 8], [8, 8, 8]) == 0.0
+        assert welch_t([8], [5]) == 0.0
