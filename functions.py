@@ -8,6 +8,7 @@ import os
 import re
 import ssl
 from datetime import datetime, timedelta
+from html import escape as html_escape
 from typing import Any, Dict, List, Optional, Union
 from zoneinfo import ZoneInfo
 
@@ -45,6 +46,7 @@ from sqlite import (
     get_tasks_pool,
     get_user_data,
     get_users_with_notifications,
+    get_users_with_scheduler_jobs,
     parse_profile,
 )
 
@@ -170,6 +172,77 @@ def ensure_notification_job(
     )
 
 
+def dedupe_preserve_order(items: List[str]) -> List[str]:
+    """Убирает дубликаты, сохраняя порядок (set() его теряет и тасует между рестартами)."""
+    return list(dict.fromkeys(items))
+
+
+def _to_float(value) -> Optional[float]:
+    """Приводит значение к float или None (для '-' и прочих пропусков)."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def diary_excel_path(user_id: Union[int, str]) -> str:
+    """Путь к Excel-дневнику пользователя."""
+    return f"{user_id}_Diary.xlsx"
+
+
+def _write_diary_excel(path: str, logs: List[tuple]) -> None:
+    """Пересобирает Excel-дневник из записей БД (блокирующая часть)."""
+    records = []
+    for log_date, log_activities, log_steps, log_sleep, log_about, log_rate in logs:
+        try:
+            formatted_date = datetime.strptime(log_date, "%Y-%m-%d").strftime("%d.%m.%Y")
+        except (TypeError, ValueError):
+            formatted_date = log_date
+        records.append(
+            {
+                "Дата": formatted_date,
+                "Дела за день": log_activities or "-",
+                "Шаги": "-" if log_steps is None else log_steps,
+                "Sleep quality": "-" if log_sleep is None else log_sleep,
+                "О дне": log_about or "-",
+                "My rate": "-" if log_rate is None else log_rate,
+            }
+        )
+    df = pd.DataFrame(
+        records,
+        columns=["Дата", "Дела за день", "Шаги", "Sleep quality", "О дне", "My rate"],
+    )
+    with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Лист1")
+
+        workbook = writer.book
+        worksheet = writer.sheets["Лист1"]
+        cell_format = workbook.add_format({"text_wrap": True})
+        cell_format_middle = workbook.add_format({"text_wrap": True, "align": "center"})
+        for row, size in zip(["B", "E"], [60, 122]):
+            worksheet.set_column(f"{row}:{row}", size, cell_format)
+        for row in ["A", "C", "D", "E"]:
+            worksheet.set_column(f"{row}:{row}", 10, cell_format_middle)
+
+
+async def export_diary_excel(user_id: Union[int, str]) -> Optional[str]:
+    """Пересобирает файл дневника из БД. НЕ создаёт запись за день.
+
+    Нужен для «скачать дневник»: раньше файл собирался через add_day_to_excel,
+    который писал в daily_logs пустую запись за сегодня и затирал настоящую.
+    """
+    logs = await get_all_logs(user_id)
+    if not logs:
+        return None
+    path = diary_excel_path(user_id)
+    try:
+        await asyncio.to_thread(_write_diary_excel, path, logs)
+    except Exception as e:
+        logger.error(f"Error exporting diary file {path}: {e}")
+        return None
+    return path
+
+
 @timed
 async def add_day_to_excel(
     date: datetime,
@@ -177,7 +250,6 @@ async def add_day_to_excel(
     sleep_quality: Union[int, float, str],
     personal_rate: Union[int, float],
     my_steps: Union[int, float, str],
-    tasks_pool: List[str],  # не используется, оставлен для совместимости вызовов
     user_message: str,
     message: Message,
     excel_chosen_tasks: Optional[List[str]] = None,
@@ -185,7 +257,7 @@ async def add_day_to_excel(
     today: Optional[bool] = None,
 ) -> Optional[Dict[str, Any]]:
     user_id = message.from_user.id
-    path = f"{user_id}_Diary.xlsx"
+    path = diary_excel_path(user_id)
 
     log_datetime = date if today else date - timedelta(days=1)
     log_date_iso = log_datetime.strftime("%Y-%m-%d")
@@ -197,14 +269,9 @@ async def add_day_to_excel(
             f"Выполнил разовые дела: {', '.join(excel_chosen_tasks)}, {user_message}"
         )
 
-    def _to_float(value):
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
     steps_value = _to_float(my_steps)
     sleep_value = _to_float(sleep_quality)
+    rate_value = _to_float(personal_rate)
 
     await add_daily_log(
         user_id=user_id,
@@ -213,57 +280,13 @@ async def add_day_to_excel(
         steps=steps_value,
         sleep_quality=sleep_value,
         about_day=about_day_text,
-        personal_rate=personal_rate,
+        personal_rate=rate_value,
     )
 
     logs = await get_all_logs(user_id)
 
-    def _write_excel():
-        records = []
-        for log_date, log_activities, log_steps, log_sleep, log_about, log_rate in logs:
-            try:
-                formatted_date = datetime.strptime(log_date, "%Y-%m-%d").strftime(
-                    "%d.%m.%Y"
-                )
-            except (TypeError, ValueError):
-                formatted_date = log_date
-            records.append(
-                {
-                    "Дата": formatted_date,
-                    "Дела за день": log_activities or "-",
-                    "Шаги": "-" if log_steps is None else log_steps,
-                    "Sleep quality": "-" if log_sleep is None else log_sleep,
-                    "О дне": log_about or "-",
-                    "My rate": "-" if log_rate is None else log_rate,
-                }
-            )
-        df = pd.DataFrame(
-            records,
-            columns=[
-                "Дата",
-                "Дела за день",
-                "Шаги",
-                "Sleep quality",
-                "О дне",
-                "My rate",
-            ],
-        )
-        with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
-            df.to_excel(writer, index=False, sheet_name="Лист1")
-
-            workbook = writer.book
-            worksheet = writer.sheets["Лист1"]
-            cell_format = workbook.add_format({"text_wrap": True})
-            cell_format_middle = workbook.add_format(
-                {"text_wrap": True, "align": "center"}
-            )
-            for row, size in zip(["B", "E"], [60, 122]):
-                worksheet.set_column(f"{row}:{row}", size, cell_format)
-            for row in ["A", "C", "D", "E"]:
-                worksheet.set_column(f"{row}:{row}", 10, cell_format_middle)
-
     try:
-        await asyncio.to_thread(_write_excel)
+        await asyncio.to_thread(_write_diary_excel, path, logs)
     except Exception as e:
         logger.error(f"Error saving diary file {path}: {e}")
         await message.answer("Ошибка при сохранении файла дневника.")
@@ -296,11 +319,16 @@ def parse_time_key(key: str) -> int:
     return hours * 60 + minutes
 
 
+def _activity_list(raw) -> List[str]:
+    """Разбирает строку дел за день в список названий (без дублей, в исходном порядке)."""
+    if not isinstance(raw, str):
+        return []
+    return dedupe_preserve_order([part.strip() for part in raw.split(",") if part.strip()])
+
+
 def _split_activities(raw) -> set:
     """Разбирает строку дел за день в множество названий."""
-    if not isinstance(raw, str):
-        return set()
-    return {part.strip() for part in raw.split(",") if part.strip()}
+    return set(_activity_list(raw))
 
 
 def _activities_by_day(history) -> Dict[Any, set]:
@@ -615,7 +643,7 @@ async def tasks_pool_function(message, state: FSMContext):
             p = parse_profile(user_db_data["profile"])
             if not tasks_pool:
                 tasks_pool = user_db_data["tasks_pool"] or (
-                    list(set(p.tasks_pool)) if p else []
+                    dedupe_preserve_order(p.tasks_pool) if p else []
                 )
                 state_updates["tasks_pool"] = tasks_pool
 
@@ -957,7 +985,9 @@ async def start(state: FSMContext, message: Message) -> None:
 
         # Используем данные из отдельных таблиц или из профиля
         tasks_pool = (
-            db_data["tasks_pool"] if db_data["tasks_pool"] else list(set(p.tasks_pool))
+            db_data["tasks_pool"]
+            if db_data["tasks_pool"]
+            else dedupe_preserve_order(p.tasks_pool)
         )
         one_time_tasks = (
             db_data["one_time_tasks"] if db_data["one_time_tasks"] else p.one_time_tasks
@@ -1007,7 +1037,7 @@ async def start(state: FSMContext, message: Message) -> None:
         # Сохраняем user_id для использования в scheduler jobs
         state_updates = {
             "user_id": message.from_user.id,
-            "tasks_pool": list(set(tasks_pool)),
+            "tasks_pool": dedupe_preserve_order(tasks_pool),
             "one_time_tasks": one_time_tasks,
             "daily_tasks": daily_tasks,
             "daily_tasks_not_time": daily_tasks_not_time,
@@ -1066,12 +1096,10 @@ async def start(state: FSMContext, message: Message) -> None:
                 await edit_database(
                     personal_records=filtered_records, user_id=message.from_user.id
                 )
-            if filtered_records:
-                record_message = "\n".join(
-                    f"{k} : {v}" for k, v in filtered_records.items()
-                )
-                out_message += f"\n\nВаши рекорды:\n{record_message}"
-                await message.answer(out_message, reply_markup=keyboard)
+            record_message = format_records(filtered_records)
+            if record_message:
+                out_message += f"\n\n🏆 Ваши рекорды:\n{record_message}"
+                await message.answer(out_message.strip(), reply_markup=keyboard)
             else:
                 await message.answer("Главное меню", reply_markup=keyboard)
         else:
@@ -1145,6 +1173,56 @@ async def restore_notification_jobs(dp) -> int:
             )
 
     logger.info(f"Restored {restored} notification jobs")
+    return restored
+
+
+async def restore_scheduler_jobs(dp) -> int:
+    """Восстанавливает запланированные напоминания (scheduler_arguments) при старте.
+
+    APScheduler держит jobs в памяти: без этого напоминания «в определённую дату»
+    не срабатывали, пока пользователь сам не откроет бота (только тогда
+    вызывался scheduler_in из start()).
+    """
+    from aiogram.fsm.storage.base import StorageKey
+
+    from handlers.common import MessageProxy
+
+    users = await get_users_with_scheduler_jobs()
+    restored = 0
+
+    for user_id_raw, scheduler_arguments in users:
+        try:
+            user_id = int(user_id_raw)
+        except (TypeError, ValueError):
+            logger.warning(f"Skip scheduler restore for bad user_id: {user_id_raw!r}")
+            continue
+        if not scheduler_arguments:
+            continue
+        try:
+            message_proxy = MessageProxy(chat_id=user_id, from_user=None, bot=bot)
+            message_proxy.from_user = type(
+                "User", (), {"id": user_id, "full_name": "User"}
+            )()
+
+            storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+            state = FSMContext(storage=dp.storage, key=storage_key)
+            await state.update_data(
+                user_id=user_id, scheduler_arguments=scheduler_arguments
+            )
+
+            await scheduler_in(
+                {"scheduler_arguments": scheduler_arguments},
+                state,
+                message=message_proxy,
+            )
+            restored += len(scheduler_arguments)
+        except Exception as e:
+            logger.error(
+                f"Failed to restore scheduler jobs for user {user_id_raw}: {e}",
+                exc_info=True,
+            )
+
+    logger.info(f"Restored {restored} scheduled reminders")
     return restored
 
 
@@ -1274,10 +1352,31 @@ async def counter_max_days(
     if output:
         send_message = await message.answer(output)
         try:
+            # Снимаем предыдущий закреп, иначе они копятся по одному за день
+            await message.bot.unpin_chat_message(message.chat.id)
+        except Exception as e:
+            logger.debug(f"Could not unpin previous message: {e}")
+        try:
             await message.bot.pin_chat_message(message.chat.id, send_message.message_id)
         except Exception as e:
             logger.debug(f"Could not pin message: {e}")
     return personal_records
+
+
+def format_records(records: Optional[Dict[str, Any]]) -> str:
+    """Формирует список личных рекордов с правильным склонением дней."""
+    if not records:
+        return ""
+    lines = []
+    for key, value in records.items():
+        try:
+            days = int(value)
+        except (TypeError, ValueError):
+            continue
+        if days <= 0:
+            continue
+        lines.append(f"{key} : {days} {_plural_days(days)}")
+    return "\n".join(lines)
 
 
 def generate_keyboard(
@@ -1329,6 +1428,28 @@ def _get_rate_emoji(rate: int) -> str:
         return "😢"
 
 
+def _chunk_lines(lines: List[str], limit: int = 4000) -> List[str]:
+    """Собирает строки в блоки не длиннее limit, не разрывая строку посередине."""
+    chunks: List[str] = []
+    current: List[str] = []
+    current_len = 0
+    for line in lines:
+        line_len = len(line) + 1
+        if current and current_len + line_len > limit:
+            chunks.append("\n".join(current))
+            current, current_len = [], 0
+        # Одна строка длиннее лимита (длинное «о дне») — режем её отдельно
+        while line_len > limit:
+            chunks.append(line[:limit])
+            line = line[limit:]
+            line_len = len(line) + 1
+        current.append(line)
+        current_len += line_len
+    if current:
+        chunks.append("\n".join(current))
+    return [chunk for chunk in chunks if chunk.strip()]
+
+
 def _get_weekday_ru(date_str: str) -> str:
     """Возвращает день недели на русском."""
     weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
@@ -1367,13 +1488,15 @@ async def diary_out(message: Message) -> None:
             formatted_date = log_date
 
         weekday = _get_weekday_ru(log_date)
-        rate = int(personal_rate) if personal_rate is not None else 0
+        rate_float = _to_float(personal_rate)
+        rate = int(rate_float) if rate_float is not None else 0
         rate_emoji = _get_rate_emoji(rate)
 
         # Заголовок дня
         lines.append(f"{'─' * 20}")
         lines.append(
-            f"📅 <b>{formatted_date}</b> ({weekday})  {rate_emoji} <b>{rate}/10</b>"
+            f"📅 <b>{html_escape(str(formatted_date))}</b> ({weekday})  "
+            f"{rate_emoji} <b>{rate}/10</b>"
         )
 
         # Статистика
@@ -1388,23 +1511,27 @@ async def diary_out(message: Message) -> None:
 
         # Дела
         if activities and activities != "-":
-            acts = activities.split(", ")
+            acts = _activity_list(activities)
             if len(acts) <= 5:
-                lines.append(f"   ✅ {', '.join(acts)}")
+                shown = ", ".join(acts)
             else:
-                lines.append(f"   ✅ {', '.join(acts[:5])} +{len(acts) - 5}")
+                shown = f"{', '.join(acts[:5])} +{len(acts) - 5}"
+            lines.append(f"   ✅ {html_escape(shown)}")
 
-        # О дне (полный текст)
+        # О дне (длинные записи подрезаем — полный текст всегда есть в Excel)
         if about_day and about_day != "-":
-            lines.append(f"   💬 <i>{about_day}</i>")
+            about_text = str(about_day)
+            if len(about_text) > 1000:
+                about_text = about_text[:1000].rstrip() + "…"
+            lines.append(f"   💬 <i>{html_escape(about_text)}</i>")
 
         lines.append("")
 
     lines.append(f"{'─' * 20}")
 
-    full_text = "\n".join(lines)
-    for i in range(0, len(full_text), 4096):
-        await message.answer(full_text[i : i + 4096], parse_mode="HTML")
+    # Режем по строкам, а не по символам: разрыв внутри тега ломает parse_mode=HTML
+    for chunk in _chunk_lines(lines):
+        await message.answer(chunk, parse_mode="HTML")
 
 
 MSK = ZoneInfo("Europe/Moscow")

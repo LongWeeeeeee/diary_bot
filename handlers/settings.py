@@ -8,6 +8,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import bot, ClientState, has_user_data
 from functions import (
     ensure_notification_job,
+    format_records,
     generate_keyboard,
     keyboard_builder,
     remove_notification_jobs,
@@ -26,28 +27,17 @@ async def settings(message: Message, state: FSMContext = None) -> None:
     user_data = await state.get_data()
     if has_user_data(user_data):
         inp = [
-            'Напоминания', 
-            'В определенную дату', 
-            'Опрашиваемые данные', 
-            'Список дел', 
-            'Разовые дела'
+            'Напоминания',
+            'В определенную дату',
+            'Опрашиваемые данные',
+            'Список дел',
+            'Разовые дела',
+            'Мои рекорды'
         ]
 
         keyboard = generate_keyboard(buttons=inp, last_button='В Главное Меню')
         await message.answer(text='Ваши Настройки', reply_markup=keyboard)
         await state.set_state(ClientState.settings)
-    else:
-        await start(message=message, state=state)
-
-
-@router.message(lambda message: message.text and message.text.lower() == 'мои рекорды', StateFilter(ClientState.settings))
-async def my_records(message: Message, state: FSMContext) -> None:
-    """Показ рекордов пользователя."""
-    user_data = await state.get_data()
-    if user_data:
-        personal_records = user_data.get('personal_records', {})
-        output = [f'{key} : {value}' for key, value in personal_records.items()]
-        await message.answer('Ваши рекорды:\n' + '\n'.join(output))
     else:
         await start(message=message, state=state)
 
@@ -60,6 +50,22 @@ SETTINGS_STATES = (
     ClientState.date_jobs_week, ClientState.date_jobs_month, ClientState.date_jobs_year, ClientState.date_jobs_once,
     ClientState.add_tasks_pool
 )
+
+
+@router.message(lambda message: message.text and message.text.lower() == 'мои рекорды', StateFilter(*SETTINGS_STATES))
+async def my_records(message: Message, state: FSMContext) -> None:
+    """Показ рекордов пользователя."""
+    user_data = await state.get_data()
+    if not user_data:
+        await start(message=message, state=state)
+        return
+    output = format_records(user_data.get('personal_records', {}))
+    if output:
+        await message.answer('🏆 Ваши рекорды:\n' + output)
+    else:
+        await message.answer(
+            'Рекордов пока нет. Отметьте дело два дня подряд — и появится первая серия 🔥'
+        )
 
 
 @router.message(lambda message: message.text and message.text.lower() == 'опрашиваемые данные', StateFilter(*SETTINGS_STATES))
@@ -85,10 +91,16 @@ async def collected_data(message: Message, state: FSMContext) -> None:
 async def collected_data_proceed(call, state):
     """Переключение опрашиваемых данных."""
     await call.answer()
-    data = int(call.data)
-    user_data = await state.get_data()
     options = ['Шаги', 'Сон']
-    
+    try:
+        data = int(call.data)
+        if not 0 <= data < len(options):
+            raise ValueError
+    except (ValueError, TypeError):
+        await call.answer('Некорректный выбор.', show_alert=True)
+        return
+    user_data = await state.get_data()
+
     chosen_collected_data = user_data.get('chosen_collected_data', [])
     if options[data] in chosen_collected_data:
         chosen_collected_data.remove(options[data])
@@ -139,7 +151,11 @@ async def notifications(message: Message, state: FSMContext) -> None:
 async def notifications_proceed(call, state):
     """Обработка настроек напоминаний."""
     await call.answer()
-    data = int(call.data)
+    try:
+        data = int(call.data)
+    except (ValueError, TypeError):
+        await call.answer('Некорректный выбор.', show_alert=True)
+        return
     user_data = await state.get_data()
     message_ctx = user_data.get('message_ctx', {})
     message_proxy = MessageProxy(
@@ -203,10 +219,14 @@ async def notifications_proceed(call, state):
 @router.message(StateFilter(ClientState.notification_set_date))
 async def notification_set_date(message, state):
     """Установка времени напоминаний."""
+    if not message.text:
+        await message.answer('Введите время в формате часы:минуты, например 14:20')
+        return
+
     user_data = await state.get_data()
     notifications_data = user_data.get('notifications_data', {})
-    notification_time = message.text.split(':')
-    
+    notification_time = message.text.strip().split(':')
+
     if len(notification_time) != 2:
         await message.answer(f'{message.text} должно быть временем, например 14:20')
         return

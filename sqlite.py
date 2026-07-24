@@ -105,18 +105,21 @@ class ConnectionPool:
             await self.initialize()
         
         lock = await self._get_lock()
+        conn = None
         async with lock:
             if self._available:
                 conn = self._available.pop()
-            else:
-                # Создаём временное соединение если пул исчерпан
-                conn = await self._create_connection()
-                try:
-                    yield conn
-                finally:
-                    await conn.close()
-                return
-        
+
+        # Пул исчерпан — временное соединение. ВАЖНО: работаем вне lock,
+        # иначе запросы сериализуются, а вложенный acquire() даёт дедлок.
+        if conn is None:
+            conn = await self._create_connection()
+            try:
+                yield conn
+            finally:
+                await conn.close()
+            return
+
         try:
             yield conn
         finally:
@@ -777,5 +780,24 @@ async def get_users_with_notifications() -> List[Dict]:
                 })
         except (json.JSONDecodeError, TypeError):
             continue
-    
+
+    return result
+
+
+async def get_users_with_scheduler_jobs() -> List[tuple]:
+    """Получает (user_id, scheduler_arguments) всех пользователей с напоминаниями."""
+    result = []
+    async with get_db() as db:
+        async with db.execute("SELECT user_id, scheduler_arguments FROM profile") as cursor:
+            rows = await cursor.fetchall()
+
+    for row in rows:
+        try:
+            user_id = str(json.loads(row[0]) if row[0] else row[0])
+            scheduler_arguments = json.loads(row[1]) if row[1] else {}
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if scheduler_arguments:
+            result.append((user_id, scheduler_arguments))
+
     return result

@@ -2,7 +2,6 @@
 import datetime
 import json
 import logging
-from datetime import date
 from datetime import datetime as dt
 
 from aiogram import Router, types
@@ -271,8 +270,11 @@ async def change_date_jobs_job(message: Message, state: FSMContext) -> None:
 @router.message(StateFilter(ClientState.date_jobs_2))
 async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
     """Выбор типа напоминания."""
+    if not message.text:
+        await message.answer('Выберите вариант кнопкой ниже.')
+        return
     user_message = normalized(message.text)
-    
+
     if user_message == 'в день недели':
         keyboard = keyboard_builder(
             tasks_list=['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу', 'воскресенье'],
@@ -288,14 +290,20 @@ async def date_jobs_job_2(message: Message, state: FSMContext) -> None:
     
     elif user_message == 'каждый год':
         await message.answer('Введите дату когда вам о нем напомнить в формате день-месяц, например:')
-        next_day = date.today()
+        next_day = dt.now(TARGET_TZ).date()
         await message.answer(next_day.strftime("%d-%m"))
         await state.set_state(ClientState.date_jobs_year)
     
     elif user_message == 'разово':
         await message.answer('Введите дату когда вам о нем напомнить в формате год-месяц-день, например:')
-        await message.answer(str(date.today()))
+        await message.answer(str(dt.now(TARGET_TZ).date()))
         await state.set_state(ClientState.date_jobs_once)
+
+    else:
+        await message.answer(
+            'Не понял. Выберите один из вариантов: '
+            '«В день недели», «Число месяца», «Каждый год» или «Разово».'
+        )
 
 
 @router.callback_query(StateFilter(ClientState.date_jobs_week))
@@ -383,7 +391,9 @@ async def date_jobs_year(message: Message, state: FSMContext) -> None:
         return
     user_data = await state.get_data()
     new_date_jobs = user_data.get('new_date_jobs', {})
-    out_message = f'Я напомню вам : "{new_date_jobs}" каждое {parsed_date.day} {parsed_date.strftime("%B")}'
+    # %B даёт английское название месяца — берём русское из MONTH_NAMES_RU
+    month_ru = MONTH_NAMES_RU[parsed_date.month - 1]
+    out_message = f'Я напомню вам : "{new_date_jobs}" каждое {parsed_date.day} {month_ru}'
     await scheduler_list(
         message, state, out_message, user_data,
         trigger="cron", day=parsed_date.day, month=parsed_date.month, args=new_date_jobs
@@ -398,8 +408,12 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
     user_data = await state.get_data()
     new_date_jobs = user_data.get('new_date_jobs', 'Напоминание')
 
+    if not message.text:
+        await message.answer('Введите дату в формате ГГГГ-ММ-ДД, например, 2025-12-31.')
+        return
+
     try:
-        user_date_part = dt.strptime(message.text, '%Y-%m-%d').date()
+        user_date_part = dt.strptime(message.text.strip(), '%Y-%m-%d').date()
     except ValueError:
         await message.answer('Неверный формат даты. Используйте ГГГГ-ММ-ДД, например, 2025-12-31.')
         return
@@ -421,17 +435,12 @@ async def date_jobs_once(message: Message, state: FSMContext) -> None:
 
     if now_aware < scheduled_dt_aware:
         month_ru = MONTH_NAMES_RU[scheduled_dt_aware.month - 1]
-        # Не добавляем время в сообщение если оно 00:00
-        if task_time == datetime.time(0, 0):
-            out_message = (
-                f'Я напомню вам : "{new_date_jobs}" {scheduled_dt_aware.day} {month_ru} '
-                f'{scheduled_dt_aware.year}'
-            )
-        else:
-            out_message = (
-                f'Я напомню вам : "{new_date_jobs}" {scheduled_dt_aware.day} {month_ru} '
-                f'{scheduled_dt_aware.year}'
-            )
+        # Время в ключ не добавляем: оно уже внутри названия дела ("дело - 18:00"),
+        # а ключ парсится обратно в executing_scheduler_job / scheduler_display
+        out_message = (
+            f'Я напомню вам : "{new_date_jobs}" {scheduled_dt_aware.day} {month_ru} '
+            f'{scheduled_dt_aware.year}'
+        )
 
         try:
             await scheduler_list(

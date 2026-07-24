@@ -1,6 +1,7 @@
 """Общие обработчики: навигация, старт, ошибки."""
 import logging
 import traceback
+from html import escape
 from types import SimpleNamespace
 
 from aiogram import Router, types
@@ -76,10 +77,13 @@ UPDATE DATA
 {update_json}
 """
 
+    # Текст исключения экранируем: без этого сообщения с '<' (например,
+    # TelegramBadRequest про HTML-разметку) не уходили админу вообще
+    error_text = escape(str(event.exception))[:2000]
     short_error_message = (
         f"<b>❗️ Произошла ошибка!</b>\n\n"
-        f"<b>Тип:</b> {type(event.exception).__name__}\n"
-        f"<b>Текст:</b> {event.exception}\n\n"
+        f"<b>Тип:</b> {escape(type(event.exception).__name__)}\n"
+        f"<b>Текст:</b> {error_text}\n\n"
         f"Полный traceback и данные Update в прикрепленном файле."
     )
 

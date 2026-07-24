@@ -1,7 +1,6 @@
 """Обработчики для работы с дневником."""
 import logging
 import os
-from datetime import datetime as dt
 
 from aiogram import Router
 from aiogram.filters import StateFilter
@@ -9,12 +8,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile, Message
 
 from config import (
-    bot, ClientState, has_user_data,
+    bot, ClientState, has_user_data, TARGET_TZ,
     NEGATIVE_RESPONSES, MIN_DIARY_MESSAGE_LENGTH, PERSONAL_RATE_MIN, PERSONAL_RATE_MAX
 )
 from functions import (
-    diary_out, add_day_to_excel, keyboard_builder, start,
-    tasks_pool_function
+    diary_out, add_day_to_excel, diary_excel_path, export_diary_excel,
+    keyboard_builder, start, tasks_pool_function
 )
 from sqlite import edit_database, replace_one_time_tasks, batch_update_tasks
 
@@ -48,21 +47,13 @@ async def download_diary(message: Message, state: FSMContext):
         await start(message=message, state=state)
         return
     
-    file_path = f'{message.from_user.id}_Diary.xlsx'
+    file_path = diary_excel_path(message.from_user.id)
     try:
         if not os.path.exists(file_path):
-            data_for_excel = {
-                'activities': user_data.get('activities', []),
-                'sleep_quality': user_data.get('sleep_quality', '-'),
-                'personal_rate': user_data.get('personal_rate', '-'),
-                'my_steps': user_data.get('my_steps', '-'),
-                'tasks_pool': user_data.get('tasks_pool', []),
-                'user_message': user_data.get('user_message', '-'),
-                'excel_chosen_tasks': user_data.get('excel_chosen_tasks', []),
-                'personal_records': user_data.get('personal_records', {}),
-            }
-            await add_day_to_excel(date=dt.now(), message=message, today=True, **data_for_excel)
-        
+            # Пересобираем файл из БД. Раньше здесь вызывался add_day_to_excel,
+            # который писал в daily_logs пустую запись за сегодня и затирал настоящую.
+            await export_diary_excel(message.from_user.id)
+
         if os.path.exists(file_path):
             sent = await message.answer_document(
                 document=FSInputFile(file_path),
@@ -182,13 +173,20 @@ async def personal_rate_1(call, state, flag=False) -> None:
     today_tasks = user_data.get('today_tasks', {})
     today_tasks_chosen = user_data.get('today_tasks_chosen', [])
     activities = [today_tasks[key] for key in today_tasks_chosen if key in today_tasks]
-    
+
     # Загружаем актуальные one_time_tasks из БД
     from sqlite import get_one_time_tasks
     one_time_tasks = await get_one_time_tasks(user_id_str)
     today_tasks_not_time = user_data.get('today_tasks_not_time', [])
-    daily_tasks_not_time_chosen = user_data.get('daily_tasks_not_time_chosen', [])
-    activities += list(daily_tasks_not_time_chosen)
+    # Галочки на делах без времени лежат в today_tasks_not_time_chosen.
+    # Раньше здесь читался daily_tasks_not_time_chosen — он заполняется только
+    # при удалении дел, поэтому дела без времени вообще не попадали в дневник.
+    not_time_chosen = [
+        task for task in user_data.get('today_tasks_not_time_chosen', [])
+        if task in today_tasks_not_time
+    ]
+    activities += not_time_chosen
+    activities = list(dict.fromkeys(activities))
     personal_rate = user_data.get('personal_rate', None)
     
     # Всегда используем from_user из call, т.к. call.message.from_user — это бот
@@ -212,7 +210,7 @@ async def personal_rate_1(call, state, flag=False) -> None:
             if task_name and task_name in one_time_tasks:
                 completed_one_time.add(task_name)
         # Проверяем выполненные дела без времени
-        for task in daily_tasks_not_time_chosen:
+        for task in not_time_chosen:
             if task in one_time_tasks:
                 completed_one_time.add(task)
         
@@ -238,8 +236,8 @@ async def personal_rate_1(call, state, flag=False) -> None:
             db_profile_updates['daily_tasks_not_time'] = daily_tasks_not_time
     
     data_for_excel = {
-        'tasks_pool': user_data.get('tasks_pool', []),
-        'date': datetime.datetime.now(),
+        # Дата записи — всегда в TZ расписания (MSK), а не в локальной TZ сервера
+        'date': datetime.datetime.now(TARGET_TZ),
         'activities': activities,
         'user_message': user_data.get('user_message', ''),
         'sleep_quality': user_data.get('sleep_quality', 0),
@@ -253,7 +251,7 @@ async def personal_rate_1(call, state, flag=False) -> None:
     
     if send_message:
         db_profile_updates['previous_diary'] = send_message.message_id
-    if answer:
+    if answer is not None:
         db_profile_updates['personal_records'] = answer
     
     # Выполняем батч-обновления БД

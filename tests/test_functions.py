@@ -310,7 +310,7 @@ class _FakeMessage:
         self.chat = SimpleNamespace(id=1)
         self.bot = _FakeBot()
 
-    async def answer(self, text):
+    async def answer(self, text, **kwargs):
         self.sent.append(text)
         return SimpleNamespace(message_id=len(self.sent))
 
@@ -364,3 +364,74 @@ class TestCounterMaxDays:
         )
         assert records == {"Бег": 2}
         assert message.sent == ["Поздравляю! дневник заполнен"]
+
+
+class TestDedupePreserveOrder:
+    """Порядок дел не должен тасоваться (раньше был list(set(...)))."""
+
+    def test_keeps_first_occurrence_order(self):
+        assert functions_module.dedupe_preserve_order(
+            ["ужин", "бег", "ужин", "сон"]
+        ) == ["ужин", "бег", "сон"]
+
+    def test_empty(self):
+        assert functions_module.dedupe_preserve_order([]) == []
+
+
+class TestFormatRecords:
+    """Рекорды выводятся со склонением и без мусора."""
+
+    def test_plural_and_filtering(self):
+        out = functions_module.format_records(
+            {"Бег": 3, "Сон": 1, "Пусто": 0, "Кривое": "abc"}
+        )
+        assert out == "Бег : 3 дня\nСон : 1 день"
+
+    def test_empty(self):
+        assert functions_module.format_records({}) == ""
+        assert functions_module.format_records(None) == ""
+
+
+class TestChunkLines:
+    """Нарезка длинного дневника не должна резать строки посередине."""
+
+    def test_splits_on_line_boundary(self):
+        lines = ["x" * 1000 for _ in range(10)]
+        chunks = functions_module._chunk_lines(lines, limit=2500)
+        assert len(chunks) == 5
+        for chunk in chunks:
+            assert len(chunk) <= 2500
+            # каждая строка целая
+            assert all(len(part) == 1000 for part in chunk.split("\n"))
+
+    def test_single_long_line_is_cut(self):
+        chunks = functions_module._chunk_lines(["y" * 5000], limit=2000)
+        assert "".join(chunks) == "y" * 5000
+
+
+class TestDiaryOutEscaping:
+    """Вывод дневника не должен ломаться на HTML в тексте пользователя."""
+
+    @pytest.mark.asyncio
+    async def test_escapes_user_text(self, monkeypatch):
+        async def fake_logs(user_id, limit=7):
+            return [("2026-07-03", "Бег & <ходьба>", 1000.0, 5.0, "день был <b>ок</b>", 7.0)]
+
+        monkeypatch.setattr(functions_module, "get_last_logs", fake_logs)
+        message = _FakeMessage()
+        message.from_user = SimpleNamespace(id=1)
+        await functions_module.diary_out(message)
+        text = "\n".join(message.sent)
+        assert "&lt;b&gt;" in text and "<b>ок</b>" not in text
+        assert "&amp;" in text
+
+    @pytest.mark.asyncio
+    async def test_bad_personal_rate_does_not_crash(self, monkeypatch):
+        async def fake_logs(user_id, limit=7):
+            return [("2026-07-03", "Бег", None, None, "-", "-")]
+
+        monkeypatch.setattr(functions_module, "get_last_logs", fake_logs)
+        message = _FakeMessage()
+        message.from_user = SimpleNamespace(id=1)
+        await functions_module.diary_out(message)
+        assert "0/10" in "\n".join(message.sent)

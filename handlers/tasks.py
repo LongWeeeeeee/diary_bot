@@ -7,8 +7,8 @@ from aiogram.types import Message
 
 from config import bot, ClientState
 from functions import (
-    generate_keyboard, keyboard_builder, tasks_pool_function, 
-    start, normalized, _is_scheduled_task
+    generate_keyboard, keyboard_builder, tasks_pool_function,
+    start, _is_scheduled_task, dedupe_preserve_order
 )
 from sqlite import (
     get_tasks_pool, replace_tasks_pool, get_one_time_tasks, 
@@ -185,7 +185,7 @@ async def add_tasks_pool(message, state: FSMContext):
     
     for word in normalized_tasks:
         tasks_pool.append(word)
-    tasks_pool = list(set(tasks_pool))
+    tasks_pool = dedupe_preserve_order(tasks_pool)
     
     keyboard = keyboard_builder(tasks_list=tasks_pool, add_dell=True)
     keyboard_ctx = user_data.get('tasks_pool_keyboard')
@@ -588,7 +588,9 @@ async def change_one_time_tasks_3(message: Message, state: FSMContext) -> None:
             await date_jobs_keyboard(message=message, state=state)
         return
     
-    user_tasks = normalized(message.text).split(', ')
+    # Регистр сохраняем: normalized() приводил названия к нижнему регистру,
+    # после чего разовое дело переставало совпадать с записями в истории
+    user_tasks = [item.strip() for item in message.text.split(',') if item.strip()]
     user_data = await state.get_data()
     user_id = str(message.from_user.id)
     one_time_tasks = user_data.get('one_time_tasks', [])
@@ -605,7 +607,7 @@ async def change_one_time_tasks_3(message: Message, state: FSMContext) -> None:
         else:
             one_time_tasks.append(i)
     
-    one_time_tasks = list(set(one_time_tasks))
+    one_time_tasks = dedupe_preserve_order(one_time_tasks)
     keyboard = keyboard_builder(tasks_list=one_time_tasks, chosen=one_time_chosen_tasks, grid=1, add_dell=True)
     keyboard_ctx = user_data.get('one_time_keyboard')
     if keyboard_ctx:

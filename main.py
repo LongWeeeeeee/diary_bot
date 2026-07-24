@@ -128,9 +128,14 @@ async def main():
         await database_start()
         
         # Восстанавливаем jobs уведомлений для всех пользователей
-        from functions import restore_notification_jobs
+        from functions import restore_notification_jobs, restore_scheduler_jobs
         restored = await restore_notification_jobs(dp)
         logger.info(f"Восстановлено {restored} уведомлений")
+
+        # Восстанавливаем запланированные напоминания (в определённую дату).
+        # Без этого они висели в памяти и терялись при каждом рестарте.
+        restored_jobs = await restore_scheduler_jobs(dp)
+        logger.info(f"Восстановлено {restored_jobs} запланированных напоминаний")
         
         # Polling с автоматическим переподключением
         while True:
