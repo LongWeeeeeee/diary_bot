@@ -192,3 +192,51 @@ class TestWelchGuard:
         assert welch_t([8, 8, 8], [5, 5, 5]) == 99.0
         assert welch_t([8, 8, 8], [8, 8, 8]) == 0.0
         assert welch_t([8], [5]) == 0.0
+
+
+class TestWordInsights:
+    """Слова из «о дне»: сигнал есть, дублей с делами нет."""
+
+    def _rows(self):
+        rows = []
+        # 6 хороших дней с великом, 6 плохих без него
+        for i in range(6):
+            rows.append(
+                log(f"2026-06-0{i + 1}", "Подтягивания", rate=9,
+                    about="Катался на велике. Подтягивался. Встретился с Машей")
+            )
+        for i in range(6):
+            rows.append(
+                log(f"2026-06-1{i}", "Подтягивания", rate=5,
+                    about="Играл в доту весь день. Подтягивался")
+            )
+        return rows
+
+    def test_finds_word_signal(self):
+        from analytics import word_insights
+
+        texts = [text for _, text, _ in word_insights(parse_logs(self._rows()))]
+        joined = " ".join(texts)
+        assert "велик" in joined
+        assert "Маш" in joined  # имя помечается отдельно
+
+    def test_does_not_duplicate_activities(self):
+        from analytics import word_insights
+
+        texts = " ".join(t for _, t, _ in word_insights(parse_logs(self._rows())))
+        # «Подтягивался» в тексте не должен попасть в выводы: есть дело
+        assert "подтягив" not in texts.lower()
+
+    def test_bot_prompt_text_is_ignored(self):
+        rows = [
+            log(f"2026-06-0{i + 1}", "Бег", rate=9,
+                about="В чем ты лучше себя вчерашнего? Не обязательно быть супер")
+            for i in range(6)
+        ]
+        assert parse_logs(rows)[0].about == ""
+
+    def test_needs_enough_days(self):
+        from analytics import word_insights
+
+        rows = [log(f"2026-06-0{i + 1}", "", rate=9, about="велик") for i in range(3)]
+        assert word_insights(parse_logs(rows)) == []

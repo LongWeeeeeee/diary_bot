@@ -1,7 +1,7 @@
-"""Разбор дневника: связь дел, сна и шагов с оценкой дня.
+"""Разбор дневника: связь дел, слов и самочувствия с оценкой дня.
 
-Считается только по структурированным данным (`daily_logs`): дела, шаги,
-качество сна, оценка дня. Свободный текст «о дне» не анализируется.
+Считается по `daily_logs`: дела, шаги, качество сна, оценка дня и слова из
+свободного текста «о дне» (частотно, без LLM — см. text_signals.py).
 
 Все функции чистые — на вход список записей БД, на выход текст сообщения.
 """
@@ -10,6 +10,8 @@ import statistics
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Sequence, Set, Tuple
+
+from text_signals import activity_stems, day_terms
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,15 @@ MAX_INSIGHTS = 4
 
 WEEKDAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
+# Тексты-подсказки самого бота, если они попали в поле «о дне»
+BOT_PROMPTS = ("Подробно расскажи про свой день", "В чем ты лучше себя вчерашнего")
+
+# Слов в тексте много, поэтому случайных совпадений больше — планка выше,
+# чем для дел, иначе в выводы попадёт первое попавшееся слово
+MIN_WORD_DAYS = 4
+MIN_WORD_T_STAT = 2.3
+MAX_WORD_INSIGHTS = 4
+
 
 @dataclass
 class DayRecord:
@@ -37,6 +48,7 @@ class DayRecord:
     steps: Optional[float] = None
     sleep: Optional[float] = None
     rate: Optional[float] = None
+    about: str = ""
 
 
 def _to_float(value) -> Optional[float]:
@@ -70,12 +82,16 @@ def parse_logs(logs: Sequence[tuple]) -> List[DayRecord]:
         activities = set()
         if isinstance(row[1], str):
             activities = {part.strip() for part in row[1].split(",") if part.strip()}
+        about = row[4] if isinstance(row[4], str) else ""
+        if about.strip().startswith(BOT_PROMPTS):
+            about = ""  # в «о дне» попал вопрос самого бота, а не запись
         records[day] = DayRecord(
             day=day,
             activities=activities,
             steps=_to_float(row[2]),
             sleep=_to_float(row[3]),
             rate=_to_float(row[5]),
+            about=about,
         )
     return [records[day] for day in sorted(records)]
 
@@ -214,6 +230,63 @@ def weekday_insight(records: Sequence[DayRecord]) -> Optional[str]:
     )
 
 
+def word_insights(records: Sequence[DayRecord]) -> List[Tuple[str, str, float]]:
+    """Слова из «о дне», связанные с оценкой дня.
+
+    Слова, уже покрытые названиями дел, отбрасываются — иначе одно и то же
+    («подтягивался» в тексте и дело «Подтягивания») попадёт в разбор дважды.
+    """
+    known = activity_stems({name for rec in records for name in rec.activities})
+
+    per_day: List[Tuple[Set[str], float]] = []
+    display: Dict[str, str] = {}
+    name_stems: Set[str] = set()
+    for rec in records:
+        if rec.rate is None or not rec.about:
+            continue
+        stems, day_display, names = day_terms(rec.about, exclude=known)
+        per_day.append((stems, rec.rate))
+        name_stems |= names
+        for base, word in day_display.items():
+            display.setdefault(base, word)
+
+    if len(per_day) < MIN_WORD_DAYS * 2:
+        return []
+
+    counts: Dict[str, int] = {}
+    for stems, _ in per_day:
+        for base in stems:
+            counts[base] = counts.get(base, 0) + 1
+
+    insights = []
+    for base, count in counts.items():
+        if count < MIN_WORD_DAYS or len(per_day) - count < MIN_WORD_DAYS:
+            continue
+        with_it = [rate for stems, rate in per_day if base in stems]
+        without_it = [rate for stems, rate in per_day if base not in stems]
+        mean_with, mean_without = _mean(with_it), _mean(without_it)
+        diff = mean_with - mean_without
+        if abs(diff) < MIN_RATE_DIFF:
+            continue
+        strength = welch_t(with_it, without_it)
+        if strength < MIN_WORD_T_STAT:
+            continue
+        word = display.get(base, base)
+        if base in name_stems:
+            label = f"«{word.capitalize()}» (имя)"
+        else:
+            label = f"«{word}»"
+        sign = "выше" if diff > 0 else "ниже"
+        text = (
+            f"{label}: {_fmt(mean_with)} против {_fmt(mean_without)} "
+            f"({sign} на {_fmt(abs(diff))}, дней {len(with_it)}/{len(without_it)})"
+        )
+        insights.append((base, text, strength))
+
+    insights.sort(key=lambda item: item[2], reverse=True)
+    return insights
+
+
 def _window(records: Sequence[DayRecord], start: date, end: date) -> List[DayRecord]:
     return [rec for rec in records if start <= rec.day <= end]
 
@@ -297,11 +370,16 @@ def build_analysis(logs: Sequence[tuple], today: Optional[date] = None) -> str:
         parts += ["", "😴 Сон и активность:"]
         parts += [f"• {text}" for text in numeric]
 
+    words = [text for _, text, _ in word_insights(records)[:MAX_WORD_INSIGHTS]]
+    if words:
+        parts += ["", "💬 Слова из ваших записей о дне:"]
+        parts += [f"• {text}" for text in words]
+
     weekday = weekday_insight(records)
     if weekday:
         parts += ["", f"🗓 {weekday}"]
 
-    if not insights and not numeric and not weekday:
+    if not insights and not numeric and not words and not weekday:
         parts += [
             "",
             "Пока устойчивых связей не видно — оценки дней слишком похожи. "
