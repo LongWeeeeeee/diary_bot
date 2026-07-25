@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
-from text_signals import activity_stems, day_terms
+from text_signals import activity_stems, cluster_stems, day_terms
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +253,15 @@ def word_insights(records: Sequence[DayRecord]) -> List[Tuple[str, str, float]]:
     if len(per_day) < MIN_WORD_DAYS * 2:
         return []
 
+    # Склеиваем формы одного слова, иначе «ставку» и «ставить» считаются порознь
+    canonical = cluster_stems({base for stems, _ in per_day for base in stems})
+    per_day = [({canonical.get(b, b) for b in stems}, rate) for stems, rate in per_day]
+    name_stems = {canonical.get(b, b) for b in name_stems}
+    display = {
+        canonical.get(base, base): word
+        for base, word in sorted(display.items(), key=lambda item: len(item[1]))
+    }
+
     counts: Dict[str, int] = {}
     for stems, _ in per_day:
         for base in stems:
@@ -285,6 +294,79 @@ def word_insights(records: Sequence[DayRecord]) -> List[Tuple[str, str, float]]:
 
     insights.sort(key=lambda item: item[2], reverse=True)
     return insights
+
+
+def build_word_report(
+    logs: Sequence[tuple], min_days: int = 3, limit: int = 40
+) -> str:
+    """Полный список самых частых слов из «о дне» с их влиянием на оценку.
+
+    В отличие от build_analysis показывает всё подряд, без порога значимости —
+    чтобы можно было глазами посмотреть на слабые и пограничные связи.
+    """
+    records = parse_logs(logs)
+    rated = [rec for rec in records if rec.rate is not None and rec.about]
+    if len(rated) < MIN_WORD_DAYS * 2:
+        return (
+            "📝 Слова из записей о дне\n\n"
+            f"Нужно хотя бы {MIN_WORD_DAYS * 2} дней с текстом, "
+            f"сейчас {len(rated)}."
+        )
+
+    known = activity_stems({name for rec in records for name in rec.activities})
+    per_day: List[Tuple[Set[str], float]] = []
+    display: Dict[str, str] = {}
+    name_stems: Set[str] = set()
+    for rec in rated:
+        stems, day_display, names = day_terms(rec.about, exclude=known)
+        per_day.append((stems, rec.rate))
+        name_stems |= names
+        for base, word in day_display.items():
+            if base not in display or len(word) < len(display[base]):
+                display[base] = word
+
+    canonical = cluster_stems({base for stems, _ in per_day for base in stems})
+    per_day = [({canonical.get(b, b) for b in stems}, rate) for stems, rate in per_day]
+    name_stems = {canonical.get(b, b) for b in name_stems}
+    grouped_display: Dict[str, str] = {}
+    for base, word in display.items():
+        root = canonical.get(base, base)
+        if root not in grouped_display or len(word) < len(grouped_display[root]):
+            grouped_display[root] = word
+
+    counts: Dict[str, int] = {}
+    for stems, _ in per_day:
+        for base in stems:
+            counts[base] = counts.get(base, 0) + 1
+
+    rows = []
+    for base, count in counts.items():
+        if count < min_days or len(per_day) - count < min_days:
+            continue
+        with_it = [rate for stems, rate in per_day if base in stems]
+        without_it = [rate for stems, rate in per_day if base not in stems]
+        diff = _mean(with_it) - _mean(without_it)
+        rows.append((count, diff, welch_t(with_it, without_it), base))
+
+    rows.sort(key=lambda item: (-item[0], -abs(item[1])))
+    lines = [
+        f"📝 Слова из записей о дне ({len(per_day)} дней с текстом)",
+        "",
+        "слово · дней · разница в оценке дня",
+    ]
+    for count, diff, strength, base in rows[:limit]:
+        word = grouped_display.get(base, base)
+        if base in name_stems:
+            word = word.capitalize()
+        sign = "+" if diff > 0 else "−"
+        mark = " ★" if abs(diff) >= MIN_RATE_DIFF and strength >= MIN_WORD_T_STAT else ""
+        lines.append(f"{word} · {count} · {sign}{_fmt(abs(diff))}{mark}")
+    lines += [
+        "",
+        "★ — разница не похожа на случайную. Остальное смотрите как подсказку, "
+        "а не как вывод: слова из дел сюда не попадают, они в основном разборе.",
+    ]
+    return "\n".join(lines)
 
 
 def _window(records: Sequence[DayRecord], start: date, end: date) -> List[DayRecord]:

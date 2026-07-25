@@ -33,7 +33,7 @@ from config import (
     should_task_run_today,
     timed,
 )
-from analytics import MIN_RATED_DAYS, build_analysis
+from analytics import MIN_RATED_DAYS, build_analysis, build_word_report
 from sqlite import (
     ParsedProfile,
     add_daily_log,
@@ -1183,6 +1183,17 @@ async def send_diary_analysis(message) -> None:
     user_id = message.from_user.id
     logs = await get_all_logs(user_id)
     text = build_analysis(logs, today=datetime.now(TARGET_TZ).date())
+    for chunk in _chunk_lines(text.split("\n")):
+        await message.answer(chunk)
+    await message.answer(
+        'Полный список слов из записей — напишите «слова».'
+    )
+
+
+async def send_word_report(message) -> None:
+    """Отправляет полный список частых слов из «о дне» с их влиянием."""
+    logs = await get_all_logs(message.from_user.id)
+    text = build_word_report(logs)
     for chunk in _chunk_lines(text.split("\n")):
         await message.answer(chunk)
 

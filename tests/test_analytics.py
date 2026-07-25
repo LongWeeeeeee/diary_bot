@@ -240,3 +240,29 @@ class TestWordInsights:
 
         rows = [log(f"2026-06-0{i + 1}", "", rate=9, about="велик") for i in range(3)]
         assert word_insights(parse_logs(rows)) == []
+
+
+class TestWordReport:
+    """Полный список слов: показывает всё, помечает значимое."""
+
+    def _rows(self):
+        rows = []
+        for i in range(8):
+            rows.append(log(f"2026-06-0{i + 1}", "", rate=9, about="катался на велике, было ясно"))
+        for i in range(8):
+            rows.append(log(f"2026-06-1{i}", "", rate=5, about="играл в доту, ставил ставки"))
+        return rows
+
+    def test_lists_words_with_impact(self):
+        from analytics import build_word_report
+
+        text = build_word_report(self._rows(), min_days=3)
+        assert "велик" in text
+        assert "★" in text  # что-то прошло порог значимости
+        assert "дней с текстом" in text
+
+    def test_not_enough_data_message(self):
+        from analytics import build_word_report
+
+        rows = [log("2026-06-01", "", rate=9, about="велик")]
+        assert "Нужно хотя бы" in build_word_report(rows)

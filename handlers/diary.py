@@ -13,7 +13,8 @@ from config import (
 )
 from functions import (
     diary_out, add_day_to_excel, diary_excel_path, export_diary_excel,
-    keyboard_builder, send_diary_analysis, start, tasks_pool_function
+    keyboard_builder, send_diary_analysis, send_word_report, start,
+    tasks_pool_function
 )
 from sqlite import edit_database, replace_one_time_tasks, batch_update_tasks
 
@@ -50,6 +51,17 @@ async def diary_analysis(message: Message, state: FSMContext) -> None:
         await start(message=message, state=state)
         return
     await send_diary_analysis(message)
+    await state.set_state(ClientState.greet)
+
+
+@router.message(lambda message: message.text and message.text.lower().strip() in ('слова', 'все слова'))
+async def diary_word_report(message: Message, state: FSMContext) -> None:
+    """Полный список слов из «о дне» с их влиянием на оценку дня."""
+    user_data = await state.get_data()
+    if not has_user_data(user_data):
+        await start(message=message, state=state)
+        return
+    await send_word_report(message)
     await state.set_state(ClientState.greet)
 
 

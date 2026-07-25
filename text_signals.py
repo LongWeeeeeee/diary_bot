@@ -53,6 +53,8 @@ _ENDINGS = sorted(
         "иями", "ями", "ами", "иях", "ией", "ные", "ный", "ная", "ное",
         "ого", "ему", "ому", "ыми", "ими", "ешь", "ете", "ует", "уют",
         "ать", "ять", "ить", "еть", "ться", "тся", "лся", "лась", "лись",
+        "ался", "ялся", "ился", "ила", "ыла", "ала", "яла", "или", "али",
+        "яли", "ило", "ало", "ал", "ял", "ил", "ел", "ыл",
         "ла", "ло", "ли", "ть", "ах", "ях", "ов", "ев", "ий", "ый", "ой",
         "ая", "яя", "ое", "ее", "ые", "ие", "ем", "ом", "ам", "ям", "их",
         "ых", "ую", "юю", "ей", "ии", "ья", "ье",
@@ -69,6 +71,10 @@ MIN_WORD_LEN = 4
 # Насколько основа слова должна совпасть с основой дела, чтобы считать их одним
 MIN_SHARED_PREFIX = 4
 MIN_PREFIX_RATIO = 0.6
+# На сколько символов формы одного слова могут расходиться при склейке основ
+MAX_CLUSTER_GAP = 2
+# Корень короче склеивать нельзя: «ста» иначе объединяет «Стаса» и «ставки»
+MIN_CLUSTER_ROOT = 4
 
 _WORD_RE = re.compile(r"[а-яёa-z]+", re.IGNORECASE)
 _SENTENCE_SPLIT = re.compile(r"[.!?…\n]+")
@@ -119,6 +125,32 @@ def is_covered(word_stem: str, known_stems: Set[str]) -> bool:
         if shared >= MIN_SHARED_PREFIX and shared >= shortest * MIN_PREFIX_RATIO:
             return True
     return False
+
+
+def cluster_stems(vocabulary: Iterable[str]) -> Dict[str, str]:
+    """Склеивает основы, где одна — начало другой («став» + «ставк», «энерг» + «энерги»).
+
+    Обрезка окончаний грубая: «ставку» даёт «ставк», а «ставить» — «став»,
+    и без склейки одно и то же слово считается двумя разными.
+    """
+    unique = sorted({s for s in vocabulary if len(s) >= MIN_STEM_LEN}, key=len)
+    canonical: Dict[str, str] = {}
+    for word_stem in unique:
+        root = word_stem
+        for candidate in unique:
+            if len(candidate) >= len(word_stem):
+                break
+            # Разница максимум в два символа: иначе «пол» съедает «получил»,
+            # а «пар» — «парней». Формы одного слова так далеко не расходятся.
+            if len(candidate) < MIN_CLUSTER_ROOT:
+                continue
+            if len(word_stem) - len(candidate) > MAX_CLUSTER_GAP:
+                continue
+            if word_stem.startswith(candidate):
+                root = canonical.get(candidate, candidate)
+                break
+        canonical[word_stem] = root
+    return canonical
 
 
 def _proper_name_stems(text: str) -> Set[str]:

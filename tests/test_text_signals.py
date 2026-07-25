@@ -19,8 +19,16 @@ class TestStem:
         forms = ["Маша", "Маше", "Машу", "Машей", "Маши"]
         assert len({stem(form) for form in forms}) == 1
 
-    def test_verb_forms_collapse(self):
-        assert stem("подтягивался") == stem("подтягивалась")
+    def test_past_tense_collapses_with_noun(self):
+        assert stem("играл") == stem("игру") == stem("игры")
+
+    def test_verb_forms_collapse_after_clustering(self):
+        """Обрезка грубая («подтягив» и «подтягива»), их склеивает cluster_stems."""
+        from text_signals import cluster_stems
+
+        stems = {stem("подтягивался"), stem("подтягивалась")}
+        roots = set(cluster_stems(stems).values())
+        assert len(roots) == 1
 
     def test_yo_is_normalized(self):
         assert normalize("Ёлка") == "елка"
@@ -87,3 +95,27 @@ class TestStopwords:
     def test_common_junk_present(self):
         for word in ["пошел", "надо", "очень", "просто", "было"]:
             assert word in STOPWORDS
+
+
+class TestClusterStems:
+    """Склейка форм одного слова без переклейки разных слов."""
+
+    def test_merges_word_forms(self):
+        from text_signals import cluster_stems
+
+        roots = cluster_stems({stem("ставку"), stem("ставить")})
+        assert len(set(roots.values())) == 1
+
+    def test_does_not_merge_different_words(self):
+        from text_signals import cluster_stems
+
+        # «ста» от «стать» не должно склеить «Стаса» со «ставками»
+        vocabulary = {stem("стать"), stem("стас"), stem("ставить"), stem("ставку")}
+        roots = cluster_stems(vocabulary)
+        assert roots[stem("стас")] != roots[stem("ставку")]
+
+    def test_short_root_does_not_swallow_long_word(self):
+        from text_signals import cluster_stems
+
+        roots = cluster_stems({stem("полы"), stem("получил")})
+        assert roots[stem("полы")] != roots[stem("получил")]
