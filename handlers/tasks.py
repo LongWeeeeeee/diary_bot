@@ -5,7 +5,7 @@ from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from config import bot, ClientState
+from config import bot, ClientState, ABOUT_DAY_PROMPT
 from functions import (
     generate_keyboard, keyboard_builder, tasks_pool_function,
     start, _is_scheduled_task, dedupe_preserve_order
@@ -245,12 +245,7 @@ async def process_tasks_pool(call: types.CallbackQuery, state: FSMContext, flag=
             await state.set_state(ClientState.total_sleep)
         else:
             await state.update_data(my_steps='-', sleep_quality='-')
-            await call.message.answer(
-                'В чем ты лучше себя вчерашнего? Не обязательно быть супер-продуктивным, '
-                'достаточно хотя бы мизерного процента и ты уже не зря прожил этот день. '
-                'Также можешь выгрузить свои эмоции за этот день, это помогает расслабиться '
-                'и не крутить в голове эти мысли'
-            )
+            await call.message.answer(ABOUT_DAY_PROMPT)
             await state.set_state(ClientState.about_day)
 
     elif data == 'Сохранить':

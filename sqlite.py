@@ -696,6 +696,57 @@ async def get_last_logs(user_id, limit=7) -> List[tuple]:
         return []
 
 
+async def get_first_log_date(user_id) -> Optional[str]:
+    """Дата самой первой записи дневника (ISO) или None, если записей нет.
+
+    Нужна для пропущенных дней: до первой записи дневник просто не вёлся,
+    такие дни пропусками не считаем.
+    """
+    user_id = str(user_id)
+    try:
+        async with get_db() as db:
+            async with db.execute(
+                "SELECT MIN(date) FROM daily_logs WHERE user_id = ?", (user_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+        return row[0] if row and row[0] else None
+    except Exception as e:
+        logger.error(f"Error getting first log date for {user_id}: {e}")
+        return None
+
+
+async def get_logged_dates(user_id, date_from: str, date_to: str) -> List[str]:
+    """Даты записей дневника в диапазоне [date_from, date_to] включительно (ISO)."""
+    user_id = str(user_id)
+    try:
+        async with get_db() as db:
+            async with db.execute(
+                "SELECT date FROM daily_logs WHERE user_id = ? AND date >= ? AND date <= ? "
+                "ORDER BY date",
+                (user_id, date_from, date_to)
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [row[0] for row in rows]
+    except Exception as e:
+        logger.error(f"Error getting logged dates for {user_id}: {e}")
+        return []
+
+
+async def has_daily_log(user_id, date: str) -> bool:
+    """Есть ли запись дневника за конкретную дату."""
+    user_id = str(user_id)
+    try:
+        async with get_db() as db:
+            async with db.execute(
+                "SELECT 1 FROM daily_logs WHERE user_id = ? AND date = ? LIMIT 1",
+                (user_id, date)
+            ) as cursor:
+                return await cursor.fetchone() is not None
+    except Exception as e:
+        logger.error(f"Error checking daily log for {user_id} at {date}: {e}")
+        return False
+
+
 async def get_all_logs(user_id) -> List[tuple]:
     """Получает все записи дневника для статистики."""
     user_id = str(user_id)

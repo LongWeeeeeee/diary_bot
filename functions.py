@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import ssl
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from html import escape as html_escape
 from typing import Any, Dict, List, Optional, Union
 from zoneinfo import ZoneInfo
@@ -21,6 +21,8 @@ from aiogram.types import Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import (
+    BACKFILL_BUTTON,
+    BACKFILL_WINDOW_DAYS,
     LAT,
     LNG,
     NEGATIVE_RESPONSES,
@@ -41,8 +43,10 @@ from sqlite import (
     create_profile,
     edit_database,
     get_all_logs,
+    get_first_log_date,
     get_full_user_state,
     get_last_logs,
+    get_logged_dates,
     get_one_time_tasks,
     get_tasks_pool,
     get_user_data,
@@ -242,6 +246,203 @@ async def export_diary_excel(user_id: Union[int, str]) -> Optional[str]:
         logger.error(f"Error exporting diary file {path}: {e}")
         return None
     return path
+
+
+# === Пропущенные дни ===
+
+# Ключи состояния незавершённого заполнения пропущенного дня.
+# Обычное заполнение за сегодня их сбрасывает, иначе брошенный backfill
+# перехватит запись сегодняшнего дня.
+BACKFILL_STATE_KEYS = (
+    "backfill_date",
+    "backfill_tasks",
+    "backfill_tasks_not_time",
+    "backfill_chosen",
+    "backfill_not_time_chosen",
+)
+
+
+def day_label(iso_date: str) -> str:
+    """«2026-08-04» → «04.08 (Вт)» — подпись дня для кнопок и сообщений."""
+    try:
+        label = datetime.strptime(iso_date, "%Y-%m-%d").strftime("%d.%m")
+    except (TypeError, ValueError):
+        return str(iso_date)
+    weekday = _get_weekday_ru(iso_date)
+    return f"{label} ({weekday})" if weekday else label
+
+
+async def missed_days(
+    user_id: Union[int, str],
+    window_days: int = BACKFILL_WINDOW_DAYS,
+    today: Optional[date] = None,
+    limit: Optional[int] = None,
+) -> List[str]:
+    """Дни без записи за последние window_days дней, свежие первыми.
+
+    Сегодня не считаем (он заполняется обычным «Заполнить Дневник»), дни до
+    самой первой записи — тоже: тогда дневник ещё не вёлся.
+    """
+    if today is None:
+        today = datetime.now(TARGET_TZ).date()
+    first_iso = await get_first_log_date(user_id)
+    if not first_iso:
+        return []
+    try:
+        first_day = datetime.strptime(first_iso, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return []
+
+    window_start = max(today - timedelta(days=window_days), first_day)
+    last_day = today - timedelta(days=1)
+    if last_day < window_start:
+        return []
+
+    logged = set(
+        await get_logged_dates(user_id, window_start.isoformat(), last_day.isoformat())
+    )
+    missed: List[str] = []
+    day = last_day
+    while day >= window_start:
+        iso = day.isoformat()
+        if iso not in logged:
+            missed.append(iso)
+            if limit and len(missed) >= limit:
+                break
+        day -= timedelta(days=1)
+    return missed
+
+
+def parse_user_date(text: str, today: Optional[date] = None) -> Optional[date]:
+    """Дата из «04.08», «04.08.2026», «2026-08-04». Будущее и мусор → None.
+
+    Для короткого «04.08» берём ближайший ПРОШЕДШИЙ такой день: в январе
+    «31.12» — это декабрь прошлого года, а не будущий.
+    """
+    if not text:
+        return None
+    if today is None:
+        today = datetime.now(TARGET_TZ).date()
+
+    raw = text.strip().replace("/", ".").replace(" ", "")
+    for fmt in ("%d.%m.%Y", "%d.%m.%y", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            parsed = datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+        return parsed if parsed <= today else None
+
+    try:
+        parsed_md = datetime.strptime(raw, "%d.%m")
+    except ValueError:
+        return None
+    for year in (today.year, today.year - 1):
+        try:
+            parsed = parsed_md.date().replace(year=year)
+        except ValueError:  # 29.02 в невисокосном году
+            continue
+        if parsed <= today:
+            return parsed
+    return None
+
+
+def _scheduled_task_entry(job_key: str) -> Optional[tuple]:
+    """Из ключа напоминания достаёт (время | None, текст дела).
+
+    Ключ выглядит как «... : "дело - ЧЧ:ММ каждый вторник"»; у дел без времени
+    время = None.
+    """
+    try:
+        task_text = (
+            normalize_preserve_case(job_key.split(" : ")[1])
+            .replace('"', "")
+            .replace(" - ", "-")
+        )
+    except (IndexError, AttributeError):
+        return None
+    parts = task_text.split("-")
+    if len(parts) >= 2:
+        time_part = parts[1].split(" ")[0]
+        if ":" in time_part and len(time_part) == 5:
+            suffix = " ".join(parts[1].split(" ")[1:])
+            return time_part, f"{parts[0].strip()} {suffix}".strip()
+    return None, task_text
+
+
+async def build_day_schedule(
+    user_id: Union[int, str], target_day: date
+) -> tuple:
+    """Расписание дел на конкретную (прошедшую) дату: (дела с временем, дела без времени).
+
+    Берём постоянное расписание пользователя и напоминания, которые попадали на
+    этот день недели/число. Разовые дела и закат не подмешиваем: их состав на
+    прошедшую дату восстановить нельзя.
+    """
+    db_data = await get_full_user_state(str(user_id))
+    profile = parse_profile(db_data.get("profile")) if db_data.get("profile") else None
+
+    tasks_pool = db_data.get("tasks_pool") or (
+        dedupe_preserve_order(profile.tasks_pool) if profile else []
+    )
+    one_time_tasks = db_data.get("one_time_tasks") or (
+        profile.one_time_tasks if profile else []
+    )
+    daily_tasks_raw = db_data.get("daily_tasks") or (profile.daily_tasks if profile else {})
+    daily_not_time_raw = db_data.get("daily_tasks_not_time") or (
+        profile.daily_tasks_not_time if profile else []
+    )
+    scheduler_arguments = profile.scheduler_arguments if profile else {}
+
+    valid_tasks = set(tasks_pool) | set(one_time_tasks)
+    tasks = {
+        time_key: task
+        for time_key, task in daily_tasks_raw.items()
+        if task in valid_tasks and not _is_scheduled_task(task)
+    }
+    tasks_not_time = [
+        task
+        for task in daily_not_time_raw
+        if task in valid_tasks and not _is_scheduled_task(task)
+    ]
+
+    target_dt = datetime(
+        target_day.year, target_day.month, target_day.day, 12, 0, tzinfo=TARGET_TZ
+    )
+    for job_key, values in scheduler_arguments.items():
+        if not should_task_run_today(values, target_dt):
+            continue
+        entry = _scheduled_task_entry(job_key)
+        if entry is None:
+            continue
+        job_timing, task_display = entry
+        if job_timing:
+            tasks.setdefault(job_timing, task_display)
+        elif task_display not in tasks_not_time:
+            tasks_not_time.append(task_display)
+
+    timed_task_names = set(tasks.values())
+    tasks_not_time = [
+        task
+        for task in dedupe_preserve_order(tasks_not_time)
+        if task not in timed_task_names
+    ]
+    return tasks, tasks_not_time
+
+
+def main_menu_keyboard(has_diary: bool, missed_count: int = 0) -> types.ReplyKeyboardMarkup:
+    """Клавиатура главного меню. Пропущенные дни показываем, только когда они есть."""
+    rows = [[types.KeyboardButton(text="Заполнить Дневник")]]
+    if has_diary:
+        rows.append(
+            [
+                types.KeyboardButton(text="Вывести Дневник"),
+                types.KeyboardButton(text="Анализ 📊"),
+            ]
+        )
+    if missed_count:
+        rows.append([types.KeyboardButton(text=f"{BACKFILL_BUTTON} ({missed_count})")])
+    rows.append([types.KeyboardButton(text="Настройки")])
+    return types.ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 @timed
@@ -587,6 +788,13 @@ async def tasks_pool_function(message, state: FSMContext):
 
     # Собираем все данные для одного update_data в конце
     state_updates = {}
+
+    # Заполнение за сегодня отменяет брошенное заполнение пропущенного дня:
+    # иначе его дата перехватила бы сегодняшнюю запись на финальном шаге.
+    if user_data.get("backfill_date"):
+        cleared = {key: None for key in BACKFILL_STATE_KEYS}
+        await state.update_data(**cleared)
+        user_data = {**user_data, **cleared}
 
     now = datetime.now(ZoneInfo("Europe/Moscow"))
     today_str = now.strftime("%Y-%m-%d")
@@ -1079,13 +1287,10 @@ async def start(state: FSMContext, message: Message) -> None:
 
         user_id = p.user_id
         path = diary_excel_path(user_id)
-        if os.path.exists(path):
-            keyboard = generate_keyboard(
-                ["Вывести Дневник", "Анализ 📊", "Настройки"],
-                first_button="Заполнить Дневник",
-            )
-        else:
-            keyboard = generate_keyboard(["Заполнить Дневник"], last_button="Настройки")
+        missed_count = len(await missed_days(user_id_str))
+        keyboard = main_menu_keyboard(
+            has_diary=os.path.exists(path), missed_count=missed_count
+        )
 
         out_message = ""
         if p.personal_records:

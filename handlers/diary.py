@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile, Message
 
 from config import (
-    bot, ClientState, has_user_data, TARGET_TZ,
+    bot, ClientState, has_user_data, TARGET_TZ, ABOUT_DAY_PROMPT,
     NEGATIVE_RESPONSES, MIN_DIARY_MESSAGE_LENGTH, PERSONAL_RATE_MIN, PERSONAL_RATE_MAX
 )
 from functions import (
@@ -18,6 +18,7 @@ from functions import (
 )
 from sqlite import edit_database, replace_one_time_tasks, batch_update_tasks
 
+from .backfill import finish_backfill, show_missed_days
 from .common import MessageProxy
 
 router = Router(name="diary")
@@ -27,6 +28,19 @@ router = Router(name="diary")
 async def fill_diary_handler(message: Message, state: FSMContext):
     """Обработчик команды заполнения дневника."""
     await tasks_pool_function(message, state)
+
+
+@router.message(
+    lambda message: message.text
+    and message.text.lower().startswith('пропущенные дни')
+)
+async def fill_missed_days_handler(message: Message, state: FSMContext):
+    """Заполнение пропущенных дней (кнопка меню с счётчиком в тексте)."""
+    user_data = await state.get_data()
+    if not has_user_data(user_data):
+        await start(message=message, state=state)
+        return
+    await show_missed_days(message, state)
 
 
 @router.message(lambda message: message.text and message.text.lower() == 'вывести дневник')
@@ -132,23 +146,13 @@ async def process_total_sleep(message: Message, state: FSMContext) -> None:
         try:
             user_message = float(message.text.replace(',', '.'))
             await state.update_data(sleep_quality=user_message)
-            await message.answer(
-                'В чем ты лучше себя вчерашнего? Не обязательно быть супер-продуктивным, '
-                'достаточно хотя бы мизерного процента и ты уже не зря прожил этот день. '
-                'Также можешь выгрузить свои эмоции за этот день, это помогает расслабиться '
-                'и не крутить в голове эти мысли'
-            )
+            await message.answer(ABOUT_DAY_PROMPT)
             await state.set_state(ClientState.about_day)
         except ValueError:
             await message.answer(f'"{message.text}" должно быть числом')
     else:
         await state.update_data(sleep_quality=0)
-        await message.answer(
-            'В чем ты лучше себя вчерашнего? Не обязательно быть супер-продуктивным, '
-            'достаточно хотя бы мизерного процента и ты уже не зря прожил этот день. '
-            'Также можешь выгрузить свои эмоции за этот день, это помогает расслабиться '
-            'и не крутить в голове эти мысли'
-        )
+        await message.answer(ABOUT_DAY_PROMPT)
         await state.set_state(ClientState.about_day)
 
 
@@ -177,10 +181,17 @@ async def process_personal_rate(message: Message, state: FSMContext) -> None:
     except (ValueError, TypeError):
         await message.answer(f'"{message.text}" должен быть числом от {PERSONAL_RATE_MIN} до {PERSONAL_RATE_MAX}')
         return
-    
+
+    user_data = await state.get_data()
     await state.update_data(personal_rate=personal_rate, message_ctx={'chat_id': message.chat.id})
+
+    # Пропущенный день: дата уже выбрана, вопрос «за вчера или за сегодня» не нужен
+    if user_data.get('backfill_date'):
+        await finish_backfill(message, state)
+        return
+
     await message.answer(
-        'За вчера или за сегодня?', 
+        'За вчера или за сегодня?',
         reply_markup=keyboard_builder(tasks_list=['За вчера', 'За сегодня'], grid=2)
     )
     await state.set_state(ClientState.personal_rate_1)
