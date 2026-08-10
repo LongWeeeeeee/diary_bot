@@ -429,6 +429,49 @@ async def build_day_schedule(
     return tasks, tasks_not_time
 
 
+async def refresh_personal_records(
+    user_id: Union[int, str], records: Optional[Dict[str, Any]] = None
+) -> tuple:
+    """Пересчитывает рекорды по всей истории. Возвращает (рекорды, что выросло).
+
+    Нужно после заполнения пропущенного дня: закрытая дыра удлиняет текущую
+    серию, а обычный пересчёт идёт только в конце заполнения за сегодня — до
+    него рекорд оставался бы заниженным.
+    """
+    logs = await get_all_logs(user_id)
+    if records is None:
+        db_data = await get_full_user_state(str(user_id))
+        profile = parse_profile(db_data.get("profile")) if db_data.get("profile") else None
+        records = dict(profile.personal_records) if profile else {}
+    else:
+        records = dict(records)
+    if not logs:
+        return records, {}
+
+    history = [(log[0], log[1]) for log in logs]
+    by_day = _activities_by_day(history)
+    if not by_day:
+        return records, {}
+
+    improved: Dict[str, int] = {}
+    # Серия считается от последней записи, поэтому вырасти может только у дел,
+    # отмеченных в этот последний день
+    for activity in by_day[max(by_day)]:
+        streak = counter_positive(activity, history)
+        try:
+            previous = int(records.get(activity, 0))
+        except (TypeError, ValueError):
+            previous = 0
+        if streak > previous:
+            records[activity] = streak
+            improved[activity] = streak
+
+    if improved:
+        await edit_database(personal_records=records, user_id=user_id)
+        logger.info(f"refresh_personal_records: user={user_id}, обновлено {improved}")
+    return records, improved
+
+
 def main_menu_keyboard(has_diary: bool, missed_count: int = 0) -> types.ReplyKeyboardMarkup:
     """Клавиатура главного меню. Пропущенные дни показываем, только когда они есть."""
     rows = [[types.KeyboardButton(text="Заполнить Дневник")]]

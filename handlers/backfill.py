@@ -8,6 +8,7 @@
 иначе заполнение старого дня собьёт отметки за сегодня.
 """
 import logging
+import os
 from datetime import datetime
 
 from aiogram import Router, types
@@ -22,9 +23,10 @@ from config import (
     ClientState, bot
 )
 from functions import (
-    BACKFILL_STATE_KEYS, _to_float, build_day_schedule, day_label,
-    dedupe_preserve_order, export_diary_excel, keyboard_builder, missed_days,
-    parse_user_date, start
+    BACKFILL_STATE_KEYS, _plural_days, _to_float, build_day_schedule, day_label,
+    dedupe_preserve_order, diary_excel_path, export_diary_excel, keyboard_builder,
+    main_menu_keyboard, missed_days, parse_user_date, refresh_personal_records,
+    start
 )
 from sqlite import add_daily_log, has_daily_log
 
@@ -261,8 +263,9 @@ async def backfill_tasks_callback(call: types.CallbackQuery, state: FSMContext) 
 async def finish_backfill(message, state: FSMContext) -> None:
     """Сохраняет ответы анкеты как запись за выбранный пропущенный день.
 
-    Личные рекорды и серии здесь не пересчитываем: серия считается от последней
-    записи, и следующее обычное заполнение всё равно учтёт закрытый пропуск.
+    После записи пересчитываем рекорды (закрытая дыра удлиняет серию) и заново
+    шлём главное меню: счётчик пропусков живёт в reply-клавиатуре, без новой
+    отправки Telegram продолжает показывать старое число.
     """
     user_data = await state.get_data()
     iso = user_data.get('backfill_date')
@@ -294,21 +297,33 @@ async def finish_backfill(message, state: FSMContext) -> None:
         personal_rate=_to_float(user_data.get('personal_rate')),
     )
     await export_diary_excel(user_id)
-    await state.update_data(**_clear_backfill())
+    records, improved = await refresh_personal_records(user_id)
+    await state.update_data(personal_records=records, **_clear_backfill())
     logger.info(f"backfill saved: user={user_id}, date={iso}, activities={len(activities)}")
 
     rate = user_data.get('personal_rate')
     answer = f'✅ Записал день {day_label(iso)} — {rate}/10'
     if activities:
         answer += f"\nДела: {', '.join(activities)}"
-    await message.answer(answer)
+    for activity, streak in improved.items():
+        answer += f'\n🏆 Личный рекорд: {activity} — {streak} {_plural_days(streak)}'
+
+    # Счётчик пропусков живёт в reply-клавиатуре — шлём её заново, иначе на
+    # кнопке останется число, посчитанное до заполнения
+    left = await missed_days(str(user_id))
+    await message.answer(
+        answer,
+        reply_markup=main_menu_keyboard(
+            has_diary=os.path.exists(diary_excel_path(user_id)),
+            missed_count=len(left),
+        ),
+    )
 
     # Пропусков обычно несколько — сразу предлагаем следующий
-    left = await missed_days(str(user_id), limit=BACKFILL_MAX_BUTTONS)
     if left:
         await message.answer(
             'Остались пропущенные дни — выберите следующий или вернитесь в меню:',
-            reply_markup=dates_keyboard(left),
+            reply_markup=dates_keyboard(left[:BACKFILL_MAX_BUTTONS]),
         )
         await state.set_state(ClientState.backfill_pick)
     else:

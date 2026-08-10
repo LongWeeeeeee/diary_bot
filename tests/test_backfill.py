@@ -8,7 +8,10 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import sqlite as db_module
-from functions import build_day_schedule, day_label, missed_days, parse_user_date
+from functions import (
+    build_day_schedule, day_label, missed_days, parse_user_date,
+    refresh_personal_records
+)
 
 TEST_DB = 'test_backfill.db'
 
@@ -178,6 +181,40 @@ async def test_build_day_schedule_uses_daily_tasks_and_weekly_jobs():
         tasks_wed, not_time_wed = await build_day_schedule(user_id, date(2026, 8, 5))
         assert tasks_wed == {'08:00': 'зарядка'}
         assert not_time_wed == ['прогулка']
+
+
+@pytest.mark.asyncio
+async def test_refresh_personal_records_bumps_streak_after_gap_filled():
+    async with test_db():
+        user_id = '900007'
+        await db_module.create_profile(user_id)
+        await db_module.edit_database(user_id=user_id, personal_records={'бег': 2})
+        for iso in ('2026-08-01', '2026-08-02', '2026-08-03', '2026-08-04'):
+            await _add_log(user_id, iso, activities='бег')
+
+        records, improved = await refresh_personal_records(user_id)
+        assert improved == {'бег': 4}
+        assert records['бег'] == 4
+
+        # Повторный пересчёт ничего не двигает
+        records_again, improved_again = await refresh_personal_records(user_id)
+        assert improved_again == {}
+        assert records_again['бег'] == 4
+
+
+@pytest.mark.asyncio
+async def test_refresh_personal_records_keeps_record_when_streak_broken():
+    async with test_db():
+        user_id = '900008'
+        await db_module.create_profile(user_id)
+        await db_module.edit_database(user_id=user_id, personal_records={'бег': 5})
+        await _add_log(user_id, '2026-08-01', activities='бег')
+        await _add_log(user_id, '2026-08-02', activities='другое')  # серия оборвана
+        await _add_log(user_id, '2026-08-03', activities='бег')
+
+        records, improved = await refresh_personal_records(user_id)
+        assert improved == {}
+        assert records['бег'] == 5
 
 
 if __name__ == '__main__':
