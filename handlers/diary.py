@@ -9,7 +9,7 @@ from aiogram.types import FSInputFile, Message
 
 from config import (
     bot, ClientState, has_user_data, TARGET_TZ, ABOUT_DAY_PROMPT,
-    NEGATIVE_RESPONSES, MIN_DIARY_MESSAGE_LENGTH, PERSONAL_RATE_MIN, PERSONAL_RATE_MAX
+    NEGATIVE_RESPONSES, PERSONAL_RATE_MIN, PERSONAL_RATE_MAX
 )
 from functions import (
     diary_out, add_day_to_excel, diary_excel_path, export_diary_excel,
@@ -158,14 +158,14 @@ async def process_total_sleep(message: Message, state: FSMContext) -> None:
 
 @router.message(StateFilter(ClientState.about_day))
 async def process_about_day(message: Message, state: FSMContext) -> None:
-    """Обработка описания дня."""
-    user_message = message.text
-    if not user_message or len(user_message) < MIN_DIARY_MESSAGE_LENGTH:
-        await message.answer('Расскажите подробнее про свой день, не ленитесь.')
-    else:
-        await state.update_data(user_message=message.text)
-        await message.answer('Насколько из 10 оцениваете день?')
-        await state.set_state(ClientState.personal_rate)
+    """Обработка описания дня. Длину не ограничиваем — сколько написалось, столько и записываем."""
+    user_message = (message.text or '').strip()
+    if not user_message:
+        await message.answer('Напишите про день текстом или голосовым.')
+        return
+    await state.update_data(user_message=user_message)
+    await message.answer('Насколько из 10 оцениваете день?')
+    await state.set_state(ClientState.personal_rate)
 
 
 @router.message(StateFilter(ClientState.personal_rate))

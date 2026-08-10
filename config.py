@@ -45,7 +45,6 @@ def timed(func: Callable) -> Callable:
 
 # === Константы ===
 TARGET_TZ = ZoneInfo("Europe/Moscow")
-MIN_DIARY_MESSAGE_LENGTH = 120
 PERSONAL_RATE_MIN = 0
 PERSONAL_RATE_MAX = 10
 
